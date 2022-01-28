@@ -1,0 +1,45 @@
+PODS:
+  - Flutter (1.0.0)
+  - GoogleWebRTC (1.1.31999)
+  - Libyuv (1703)
+  - screenmeet_sdk_flutter (2.0.9):
+    - Flutter
+    - Libyuv (= 1703)
+    - ScreenMeetSDK (= 2.0.9)
+  - ScreenMeetSDK (2.0.9):
+    - GoogleWebRTC
+    - Socket.IO-Client-Swift (~> 15.2.0)
+  - Socket.IO-Client-Swift (15.2.0):
+    - Starscream (~> 3.1)
+  - Starscream (3.1.1)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - screenmeet_sdk_flutter (from `.symlinks/plugins/screenmeet_sdk_flutter/ios`)
+
+SPEC REPOS:
+  trunk:
+    - GoogleWebRTC
+    - Libyuv
+    - ScreenMeetSDK
+    - Socket.IO-Client-Swift
+    - Starscream
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  screenmeet_sdk_flutter:
+    :path: ".symlinks/plugins/screenmeet_sdk_flutter/ios"
+
+SPEC CHECKSUMS:
+  Flutter: 50d75fe2f02b26cc09d224853bb45737f8b3214a
+  GoogleWebRTC: b39a78c4f5cc6b0323415b9233db03a2faa7b0f0
+  Libyuv: 5f79ced0ee66e60a612ca97de1e6ccacd187a437
+  screenmeet_sdk_flutter: 22e7bcb1d1db6bc50ff3208b02cb85e246abbcff
+  ScreenMeetSDK: 04d829e52d11169e37430cc1981bb5df0100c24c
+  Socket.IO-Client-Swift: 1e3e3a1f09f3312a167f0d781eb2f383d477357c
+  Starscream: 4bb2f9942274833f7b4d296a55504dcfc7edb7b0
+
+PODFILE CHECKSUM: 1d62be80675f50e63eb2f851d55ee75f09951c1b
+
+COCOAPODS: 1.11.2
