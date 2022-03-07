@@ -1,4 +1,4 @@
-import 'package:screenmeet_sdk_flutter/media_state.dart';
+import 'media_state.dart';
 
 ///Holds information about remote participant
 class Participant {

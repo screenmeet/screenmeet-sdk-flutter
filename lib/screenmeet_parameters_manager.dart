@@ -1,9 +1,12 @@
-import 'package:screenmeet_sdk_flutter/local_video.dart';
-import 'package:screenmeet_sdk_flutter/media_state.dart';
-import 'package:screenmeet_sdk_flutter/participant.dart';
-import 'package:screenmeet_sdk_flutter/remote_control_events.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_error.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_plugin.dart';
+import 'package:screenmeet_sdk_flutter/screenmeet_connect_error.dart';
+
+import 'feature_request.dart';
+import 'local_video.dart';
+import 'media_state.dart';
+import 'participant.dart';
+import 'remote_control_events.dart';
+import 'screenmeet_error.dart';
+import 'screenmeet_plugin.dart';
 
 ///Contains all the string constants to convert from native SDK objects into flutter objects
 ///
@@ -11,6 +14,7 @@ import 'package:screenmeet_sdk_flutter/screenmeet_plugin.dart';
 /// of it may be helpful for some general tasks
 
 class ScreenMeetParametersManager {
+  final String _kSetConfigCommand = "setConfig";
   final String _kConnectCommand = "connect";
   final String _kDisconnectCommand = "disconnect";
   final String _kConnectUserName = "connectUserName";
@@ -28,6 +32,9 @@ class ScreenMeetParametersManager {
 
   final String _kShareVideoCameraType = "shareVideoCameraType";
 
+  final String  _kFeatureGrantAccessCommand = "featureGrantAccess";
+  final String  _kFeatureRejectAccessCommand = "featureRejectAccess";
+
   final String _kAudioEnabled = "audioEnabled";
   final String _kVideoEnabled = "videoEnabled";
   final String _kScreenEnabled = "screenEnabled";
@@ -39,9 +46,23 @@ class ScreenMeetParametersManager {
   final String _kTextureId = "textureId";
   final String _kOn = "isOn";
 
+  final String _kOrganizationKey = "organizationKey";
+  final String _kCollectMetrics = "collectMetrics";
+  final String _kEndpoint = "endpoint";
+  final String _kLogLevel = "logLevel";
+
+  final String _kId = "id";
+  final String _kX = "x";
+  final String _kY = "y";
+  final String _kWidth = "width";
+  final String _kHeight = "height";
+
   final String _kResultStatus = "resultStatus";
   final String _kErrorText = "errorText";
   final String _kErrorCode = "errorCode";
+  final String _kChallengeError = "challenge";
+  final String _kChallengeSolution = "challengeSolution";
+  final String _kSolveChallenge = "solveChallenge";
 
   final String _kSetConfidential = "setConfidential";
   final String _kUnSetConfidential = "unsetConfidential";
@@ -59,10 +80,13 @@ class ScreenMeetParametersManager {
 
   final String _kRemoteControlEventTypeMouseX = "remoteControlEventTypeMouseX";
   final String _kRemoteControlEventTypeMouseY = "remoteControlEventTypeMouseY";
-
   final String _kRemoteControlEventKeyboardKey = "remoteControlEventKeyboardKey";
 
+  final String _kFeatureType = "featureType";
+  final String _kFeatureRequestorId = "featureRequestorId";
+  final String _kFeatureRequestorName = "featureRequestorName";
 
+  String get kSetConfigCommand  => _kSetConfigCommand;
   String get kConnectCommand  => _kConnectCommand;
   String get kDisconnectCommand => _kDisconnectCommand;
   String get kConnectUserName => _kConnectUserName;
@@ -80,6 +104,9 @@ class ScreenMeetParametersManager {
 
   String get kShareVideoCameraType => _kShareVideoCameraType;
 
+  String get kFeatureGrantAccessCommand => _kFeatureGrantAccessCommand;
+  String get kFeatureRejectAccessCommand => _kFeatureRejectAccessCommand;
+
   String get kAudioEnabled => _kAudioEnabled;
   String get kVideoEnabled => _kVideoEnabled;
   String get kScreenEnabled => _kScreenEnabled;
@@ -91,9 +118,23 @@ class ScreenMeetParametersManager {
   String get kTextureId => _kTextureId;
   String get kOn => _kOn;
 
+  String get kId => _kId;
+  String get kX => _kX;
+  String get kY => _kY;
+  String get kWidth => _kWidth;
+  String get kHeight => _kHeight;
+
+  String get kOrganizationKey => _kOrganizationKey;
+  String get kCollectMetrics => _kCollectMetrics;
+  String get kEndpoint => _kEndpoint;
+  String get kLogLevel => _kLogLevel;
+
   String get kResultStatus => _kResultStatus;
   String get kErrorText => _kErrorText;
   String get kErrorCode => _kErrorCode;
+  String get kChallengeError => _kChallengeError;
+  String get kChallengeSolution => _kChallengeSolution;
+  String get kSolveChallenge => _kSolveChallenge;
 
   String get kSetConfidential => _kSetConfidential;
   String get kUnSetConfidential => _kUnSetConfidential;
@@ -114,6 +155,9 @@ class ScreenMeetParametersManager {
 
   String get kRemoteControlEventKeyboardKey => _kRemoteControlEventKeyboardKey;
 
+  String get kFeatureType => _kFeatureType;
+  String get kFeatureRequestorId => _kFeatureRequestorId;
+  String get kFeatureRequestorName => _kFeatureRequestorName;
 
   bool isSuccess(Map map) {
     return map[_kResultStatus] == true;
@@ -121,6 +165,10 @@ class ScreenMeetParametersManager {
 
   ScreenMeetError error(Map map) {
     return ScreenMeetError(map[_kErrorText], map[_kErrorCode]);
+  }
+
+  ScreenMeetConnectError connectError(Map map) {
+    return ScreenMeetConnectError(map[_kErrorText], map[_kErrorCode], map[_kChallengeError]);
   }
 
   MediaState mediaState(Map params) {
@@ -161,6 +209,10 @@ class ScreenMeetParametersManager {
     return RemoteControlMouseEvent("fromId", "toId", 0, eventDict[_kRemoteControlEventTypeMouseX], eventDict[_kRemoteControlEventTypeMouseY], eventDict[_kRemoteControlEventMouseActionType]);
   }
 
+  FeatureRequest featureRequest(Map featureDict) {
+    FeatureRequest featureRequest =  FeatureRequest(featureDict[_kFeatureRequestorId], featureDict[_kFeatureRequestorName], featureDict[_kFeatureType]);
+    return featureRequest;
+  }
 }
 
 ///All connection states for screenmeet SDK
@@ -185,4 +237,7 @@ class ScreenMeetErrorCode {
 
   //Permission from the host is needed to enter the room
   static const int kErrorKnowEntryPermissionRequired = 1004;
+
+  //User required to complete captcha
+  static const int kErrorCaptchaRequired = 1005;
 }

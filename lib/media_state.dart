@@ -25,5 +25,4 @@ class MediaState {
 
   ///Whether screen sharing is on
   bool get isSharingScreen => _isSharingScreen;
-
 }

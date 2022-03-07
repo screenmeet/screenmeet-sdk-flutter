@@ -17,8 +17,17 @@ class AnyThreadResult(private val result: MethodChannel.Result) : MethodChannel.
         } ?: mapOf(resultStatus to true))
     }
 
-    fun error(text: String, code: Int): Map<String, Any> {
-        error(mapOf(resultStatus to false, errorText to text, errorCode to code))
+    fun error(text: String, code: Int) {
+        success(mapOf(resultStatus to false, errorText to text, errorCode to code))
+    }
+
+    fun error(text: String, code: Int, params: Map<String, Any>? = null) {
+        success(params?.toMutableMap()?.apply {
+            this[resultStatus] = false
+            this[errorText] = text
+            this[errorCode] = code
+            putAll(params)
+        } ?: mapOf(resultStatus to false))
     }
 
     override fun success(o: Any?) {

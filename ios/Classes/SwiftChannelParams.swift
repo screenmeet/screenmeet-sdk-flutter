@@ -14,6 +14,7 @@ enum CameraType: String {
 }
 
 class SwiftChannelParamsManager: NSObject {
+    let kSetConfigCommand = "setConfig"
     let kConnectCommand = "connect"
     let kDisconnectCommand = "disconnect"
     let kConnectUserName = "connectUserName"
@@ -32,6 +33,9 @@ class SwiftChannelParamsManager: NSObject {
     
     let kSetConfidetianlRectCommand = "setConfidential"
     let kUnsetConfidetianlRectCommand = "unsetConfidential"
+    
+    let kFeatureGrantAccessCommand = "featureGrantAccess"
+    let kFeatureRejectAccessCommand = "featureRejectAccess"
 
     let kAudioEnabled = "audioEnabled"
     let kVideoEnabled = "videoEnabled"
@@ -42,6 +46,11 @@ class SwiftChannelParamsManager: NSObject {
     let kParticipantName = "participantName"
     let kTextureId = "textureId"
     let kOn = "isOn"
+    
+    let kOrganizationKey = "organizationKey";
+    let kCollectMetrics = "collectMetrics";
+    let kEndpoint = "endpoint";
+    let kLogLevel = "logLevel";
     
     let kId = "id"
     let kX = "x"
@@ -69,6 +78,10 @@ class SwiftChannelParamsManager: NSObject {
     let kRemoteControlEventTypeMouseY = "remoteControlEventTypeMouseY"
     
     let kRemoteControlEventKeyboardKey = "remoteControlEventKeyboardKey"
+    
+    let kFeatureType = "featureType"
+    let kFeatureRequestorId = "featureRequestorId"
+    let kFeatureRequestorName = "featureRequestorName"
     
     //Error codes
     
@@ -130,7 +143,15 @@ class SwiftChannelParamsManager: NSObject {
             dict[kRemoteControlEventKeyboardActionType] = event.type.rawValue
         }
         
-      
+        return dict
+    }
+    
+    
+    func featureToDict(_ feature: SMFeature) -> [String: Any] {
+        var dict = [String: Any]()
+        dict[kFeatureType] = feature.type.rawValue
+        dict[kFeatureRequestorId] = feature.requestorParticipant.id
+        dict[kFeatureRequestorName] = feature.requestorParticipant.name
         return dict
     }
     

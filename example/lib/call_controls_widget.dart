@@ -1,9 +1,5 @@
-import 'dart:ffi';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:screenmeet_sdk_flutter/media_state.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_parameters_manager.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_plugin.dart';
 
 /// A widget that allows to interact with a call

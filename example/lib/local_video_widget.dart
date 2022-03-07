@@ -1,9 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:screenmeet_sdk_flutter/local_video.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_parameters_manager.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_plugin.dart';
 
 /// A widget doing the local video preview
@@ -78,7 +76,7 @@ class LocalVideoState extends State<LocalVideoWidget> {
 
     response.fold(
             (error) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.text))),
-            (localVideo) =>setState(() {
+            (localVideo) => setState(() {
               this.localVideo = localVideo;
             })
     );
@@ -86,23 +84,22 @@ class LocalVideoState extends State<LocalVideoWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(height: 580,  width: MediaQuery.of(context).size.width - 20, child:
-      Stack(children: [
-        Container(child: (numberOfParticipants == 0 && localVideo != null && localVideo.isOn && localVideo.textureId != -1) ? new Texture(textureId: localVideo.textureId) : Container(color: Colors.blue, height: 0)),
-        Align(alignment: Alignment.topRight, child: Container( margin: const EdgeInsets.only(left: 0.0, right: 0.0), height: localVideoHeight, width:localVideoWidth,
+    return Container(
+        height: MediaQuery.of(context).size.height * 0.65,
+        width: MediaQuery.of(context).size.width - 20,
+        child: Stack(
+            children: [
+              Container(child: (numberOfParticipants == 0 && localVideo.isOn && localVideo.textureId != -1) ? new Texture(textureId: localVideo.textureId) : Container(color: Colors.blue, height: 0)),
+              Align(alignment: Alignment.topRight, child: Container( margin: const EdgeInsets.only(left: 0.0, right: 0.0), height: localVideoHeight, width:localVideoWidth,
             child: Stack(children: [
-              (numberOfParticipants > 0 && localVideo != null && localVideo.isOn && localVideo.textureId != -1) ?
+              (numberOfParticipants > 0 && localVideo.isOn && localVideo.textureId != -1) ?
               Container(height: localVideoHeight, width:localVideoWidth, child: new Texture(textureId: localVideo.textureId)) : SizedBox(height: localVideoHeight),
 
-              (numberOfParticipants > 0 && localVideo != null && localVideo.isOn && localVideo.textureId != -1) ?
+              (numberOfParticipants > 0 && localVideo.isOn && localVideo.textureId != -1) ?
               Align(alignment: Alignment.topRight, child:
               IconButton(padding: const EdgeInsets.all(0.0), onPressed: () async {
                 await ScreenMeetPlugin().changeVideoSource();
-              },
-                icon: Icon(Icons.flip_camera_android, size: 22, color: CupertinoColors.systemGrey4,),
-
-              )
-              )  : SizedBox(height: 22)
+              }, icon: Icon(Icons.flip_camera_android, size: 22, color: CupertinoColors.systemGrey4)))  : SizedBox(height: 22)
             ]
             )))
       ])

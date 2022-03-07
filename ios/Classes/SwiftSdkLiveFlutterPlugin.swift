@@ -2,6 +2,7 @@ import Flutter
 import UIKit
 import ScreenMeetSDK
 
+typealias PermissionRequstCallback = (_ granted: Bool) -> Void
 public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
     
     private let kLocalMediaStateEventChannel = "platform_channel_events/screenmeet/localMediaState"
@@ -9,18 +10,21 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
     private let kConnectionStateEventChannel = "platform_channel_events/screenmeet/connectionState"
     private let kLocalVideoEventChannel = "platform_channel_events/screenmeet/localVideo"
     private let kRemoteControlEventChannel = "platform_channel_events/screenmeet/remoteControl"
+    private let kFeatureRequestChannel = "platform_channel_events/screenmeet/featureRequest"
     
     private var connectionStateEventChannel: FlutterEventChannel!
     private var localMediaStateEventChannel: FlutterEventChannel!
     private var remoteParticipantEventChannel: FlutterEventChannel!
     private var localVideoEventChannel: FlutterEventChannel!
     private var remoteControlEventChannel: FlutterEventChannel!
+    private var featureRequestsChannel: FlutterEventChannel!
     
     private var connectionStreamHandler: ConnectionStreamHandler!
     private var localMediaStateStreamHandler: LocalMediaStateStreamHandler!
     private var participantsStreamHandler: ParticipantsStreamHandler!
     private var localVideoStreamHandler: LocalVideoStreamHandler!
-    private var remoteControlStreamHandler:  RemoteControlStreamHandler!
+    private var remoteControlStreamHandler: RemoteControlStreamHandler!
+    private var featureRequestStreamHandler: FeatureRequestStreamHandler!
     
     private let pm = SwiftChannelParamsManager()
     private var textures: FlutterTextureRegistry!
@@ -28,6 +32,7 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
     private var registry: FlutterPluginRegistrar!
     
     private var confidentialRects = [String: CGRect]()
+    private var featureRequests = [String: PermissionRequstCallback]()
     
     private var renderers = [String: FlutterRTCVideoRenderer]()
     private var localRenderer: FlutterRTCVideoRenderer? = nil
@@ -51,6 +56,8 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
         connectionStateEventChannel = FlutterEventChannel(name: kConnectionStateEventChannel, binaryMessenger: registrar.messenger())
         localVideoEventChannel = FlutterEventChannel(name: kLocalVideoEventChannel, binaryMessenger: registrar.messenger())
         remoteControlEventChannel = FlutterEventChannel(name: kRemoteControlEventChannel, binaryMessenger: registrar.messenger())
+        
+        featureRequestsChannel = FlutterEventChannel(name: kFeatureRequestChannel, binaryMessenger: registrar.messenger())
 
         connectionStreamHandler = ConnectionStreamHandler()
         connectionStateEventChannel.setStreamHandler(connectionStreamHandler)
@@ -66,6 +73,9 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
         
         remoteControlStreamHandler = RemoteControlStreamHandler()
         remoteControlEventChannel.setStreamHandler(remoteControlStreamHandler)
+        
+        featureRequestStreamHandler = FeatureRequestStreamHandler()
+        featureRequestsChannel.setStreamHandler(featureRequestStreamHandler)
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -73,7 +83,6 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
             
             if let arguments = call.arguments as? [String: Any] {
                 if let roomId = arguments[pm.kConnectRoomId] as? String, let userName = arguments[pm.kConnectUserName] as? String {
-                    NSLog("RoomId: \(roomId)")
                     
                     ScreenMeet.delegate = self
                     ScreenMeet.connect(roomId, userName) { [weak self] error in
@@ -101,6 +110,31 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
         if (call.method == pm.kDisconnectCommand) {
             ScreenMeet.disconnect()
             clearTextures()
+            result(pm.success())
+        }
+        
+        if (call.method == pm.kSetConfigCommand) {
+            if let arguments = call.arguments as? [String: Any] {
+                if let organizationKey = arguments[pm.kOrganizationKey] as? String,
+                let endpoint = arguments[pm.kEndpoint] as? String,
+                let collectMetrics = arguments[pm.kCollectMetrics] as? Bool,
+                let logLevel = arguments[pm.kLogLevel] as? String {
+                    
+                    if logLevel == "info" { ScreenMeet.config.loggingLevel = .info }
+                    if logLevel == "debug" { ScreenMeet.config.loggingLevel = .debug }
+                    if logLevel == "error" { ScreenMeet.config.loggingLevel =  .error }
+
+                    ScreenMeet.config.collectMetric = collectMetrics
+                    if !endpoint.isEmpty { ScreenMeet.config.endpoint = URL(string: endpoint)! }
+                    if !organizationKey.isEmpty { ScreenMeet.config.organizationKey = organizationKey }
+                }
+                else {
+                    result(pm.error("Parameters for this channel method are wrong. Organization key, endpoint, log level or collect metric not found", pm.kErrorCodeWrongMethodParameters))
+                }
+            }
+            else {
+                result(pm.error("Parameters for this channel method are wrong", pm.kErrorCodeWrongMethodParameters))
+            }
             result(pm.success())
         }
     
@@ -179,7 +213,6 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
                 let y = arguments[pm.kY] as? Double,
                 let width = arguments[pm.kWidth] as? Double,
                 let height = arguments[pm.kHeight] as? Double {
-                    
                     let rect = CGRect(x: x, y: y, width: width, height: height)
                     confidentialRects[id] = rect
                     ScreenMeet.getAppStreamService().setConfidential(rect: rect)
@@ -195,17 +228,51 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
         }
         
         else if (call.method == pm.kUnsetConfidetianlRectCommand) {
-            if let arguments = call.arguments as? [String: Any] {
-                if let id = arguments[pm.kId] as? String{
-                    if let rect = confidentialRects[id] {
-                        ScreenMeet.getAppStreamService().unsetConfidential(rect: rect)
-                    }
-                    confidentialRects[id] = nil
+            if let id = call.arguments as? String {
+                if let rect = confidentialRects[id] {
+                    ScreenMeet.getAppStreamService().unsetConfidential(rect: rect)
                 }
                 else {
-                    result(pm.error("Parameters for this channel method are wrong. Make sure rect id is passed", pm.kErrorCodeWrongMethodParameters))
+                    result(pm.error("Could not find the confidential rect with given id", pm.kErrorCodeWrongMethodParameters))
                 }
-              
+                confidentialRects[id] = nil
+            }
+            else {
+                result(pm.error("Parameters for this channel method are wrong", pm.kErrorCodeWrongMethodParameters))
+            }
+        }
+        else if (call.method == pm.kFeatureGrantAccessCommand) {
+            if let arguments = call.arguments as? [String: Any] {
+                if let requestorId = arguments[pm.kFeatureRequestorId] as? String, let featureType = arguments[pm.kFeatureType] as? String {
+                    if let callback = featureRequests["\(requestorId)\(featureType)"] {
+                        callback(true)
+                    }
+                    else {
+                        result(pm.error("Parameters for this channel method are wrong. Feature requst with given requstor id or type not found", pm.kErrorCodeWrongMethodParameters))
+                    }
+                }
+                else {
+                    result(pm.error("Parameters for this channel method are wrong. Feature requstor id or feature type", pm.kErrorCodeWrongMethodParameters))
+                }
+            }
+            else {
+                result(pm.error("Parameters for this channel method are wrong", pm.kErrorCodeWrongMethodParameters))
+            }
+        }
+        
+        else if (call.method == pm.kFeatureRejectAccessCommand) {
+            if let arguments = call.arguments as? [String: Any] {
+                if let requestorId = arguments[pm.kFeatureRequestorId] as? String, let featureType = arguments[pm.kFeatureType] as? String {
+                    if let callback = featureRequests["\(requestorId)\(featureType)"] {
+                        callback(false)
+                    }
+                    else {
+                        result(pm.error("Parameters for this channel method are wrong. Feature requst with given requstor id or type not found", pm.kErrorCodeWrongMethodParameters))
+                    }
+                }
+                else {
+                    result(pm.error("Parameters for this channel method are wrong. Feature requstor id or feature type", pm.kErrorCodeWrongMethodParameters))
+                }
             }
             else {
                 result(pm.error("Parameters for this channel method are wrong", pm.kErrorCodeWrongMethodParameters))
@@ -285,12 +352,25 @@ extension SwiftSdkLiveFlutterPlugin {
 }
 
 extension SwiftSdkLiveFlutterPlugin: ScreenMeetDelegate {
-    public func onRequest(entitlement: SMEntitlementType, participant: SMParticipant, decisionHandler: @escaping (Bool) -> Void) {
-        decisionHandler(true)
+    public func onFeatureRequest(_ feature: SMFeature, _ decisionHandler: @escaping (Bool) -> Void) {
+        featureRequests["\(feature.requestorParticipant.id)\(feature.type.rawValue)"] = decisionHandler
+        featureRequestStreamHandler.sendPersmissionRequest(feature)
     }
     
-    public func onRequestRejected(entitlement: SMEntitlementType) {
-        
+    public func onFeatureRequestRejected(feature: SMFeature) {
+        featureRequests["\(feature.requestorParticipant.id)\(feature.type.rawValue)"] = nil
+    }
+    
+    public func onFeatureStopped(feature: SMFeature) {
+        NSLog("onFeatureStopped: \(feature.type.rawValue)")
+    }
+    
+    public func onFeatureStarted(feature: SMFeature) {
+        NSLog("*Feature started: \(feature.type.rawValue)")
+    }
+    
+    public func onRequest(entitlement: SMEntitlementType, participant: SMParticipant, decisionHandler: @escaping (Bool) -> Void) {
+        decisionHandler(true)
     }
     
     public func onRemoteControlEvent(_ event: SMRemoteControlEvent) {
@@ -363,15 +443,5 @@ extension SwiftSdkLiveFlutterPlugin: ScreenMeetDelegate {
         
     }
     
-    public func onFeatureRequest(_ feature: SMFeature, _ decisionHandler: @escaping (Bool) -> Void) {
-    }
-    
-    public func onFeatureRequestRejected(feature: SMFeature) {
-    }
-    
-    public func onFeatureStopped(feature: SMFeature) {
-    }
-    
-    public func onFeatureStarted(feature: SMFeature) {
-    }
+
 }

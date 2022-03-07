@@ -16,6 +16,7 @@ import io.flutter.embedding.engine.plugins.lifecycle.HiddenLifecycleReference
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.TextureRegistry
+import kotlinx.coroutines.*
 
 class SdkLiveFlutterPlugin: FlutterPlugin, ActivityAware {
 
@@ -27,6 +28,8 @@ class SdkLiveFlutterPlugin: FlutterPlugin, ActivityAware {
 
   private lateinit var messenger: BinaryMessenger
   private lateinit var textureRegistry: TextureRegistry
+
+  private val pluginScope = CoroutineScope(Dispatchers.IO)
 
   private var application: Application? = null
   private var observer: LifeCycleObserver? = null
@@ -51,7 +54,8 @@ class SdkLiveFlutterPlugin: FlutterPlugin, ActivityAware {
     this.textureRegistry = textureRegistry
     this.application = appContext as Application
 
-    channel = MethodChannel(binaryMessenger, "sdk_live_flutter_plugin")
+    val method = MethodChannel(binaryMessenger, "sdk_live_flutter_plugin")
+    channel = method
     methodCallHandler = MethodCallHandlerImpl(appContext, binaryMessenger, textureRegistry)
     channel?.setMethodCallHandler(methodCallHandler)
   }
@@ -62,6 +66,7 @@ class SdkLiveFlutterPlugin: FlutterPlugin, ActivityAware {
       lifecycle = (binding.lifecycle as HiddenLifecycleReference).lifecycle
       lifecycle?.addObserver(it)
       application?.registerActivityLifecycleCallbacks(it)
+      methodCallHandler?.activity = binding.activity
     }
   }
 
@@ -71,6 +76,7 @@ class SdkLiveFlutterPlugin: FlutterPlugin, ActivityAware {
       application?.unregisterActivityLifecycleCallbacks(it)
     }
     lifecycle = null
+    methodCallHandler?.activity = null
   }
 
   override fun onDetachedFromActivityForConfigChanges() { }

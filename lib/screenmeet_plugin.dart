@@ -1,15 +1,18 @@
 import 'dart:async';
-import 'dart:ffi';
 
 import 'package:either_dart/either.dart';
 import 'package:flutter/services.dart';
 import 'package:rect_getter/rect_getter.dart';
-import 'package:screenmeet_sdk_flutter/local_video.dart';
-import 'package:screenmeet_sdk_flutter/media_state.dart';
-import 'package:screenmeet_sdk_flutter/participant.dart';
-import 'package:screenmeet_sdk_flutter/remote_control_events.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_error.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_parameters_manager.dart';
+import 'package:screenmeet_sdk_flutter/screenmeet_connect_error.dart';
+
+import 'feature_request.dart';
+import 'local_video.dart';
+import 'media_state.dart';
+import 'participant.dart';
+import 'remote_control_events.dart';
+import 'screenmeet_config.dart';
+import 'screenmeet_error.dart';
+import 'screenmeet_parameters_manager.dart';
 
 class ScreenMeetPlugin {
 
@@ -37,6 +40,9 @@ class ScreenMeetPlugin {
   // The channel to receive remote control events from ScreenMeet SDK
   final EventChannel _remoteControlEventChannel = EventChannel('platform_channel_events/screenmeet/remoteControl');
 
+  // The channel to receive permission requests from ScreenMeet SDK (which in  its turn is requested by remote peers to grant access fot remote control or laser pointer fox example )
+  final EventChannel _featureRequestChannel = EventChannel('platform_channel_events/screenmeet/featureRequest');
+
   Map _confidentialWidgets = Map<String, RectGetter>();
 
   // Listener for local media state changes. Will be fired when audio, video, screen sharing is turned on/off
@@ -54,11 +60,13 @@ class ScreenMeetPlugin {
   //Listener for remote control events send by SDK. Will be fired when remote control is granted by you and the participant is clicking mouse, hits kehboard, etc
   void Function(RemoteControlEvent)? _remoteControlListener;
 
+  //Listener for feature permission requests that SDK receives from remote peers. Will be fired when someone requests access from you to a certain feature (for example remote controlling your screen or showing laser pointer on your screen)
+  void Function(FeatureRequest)? _featureRequestListener;
+
   void _init(){
     _channel.setMethodCallHandler(handle);
 
     //setup event channels that should receive events from native SDK
-
     _localMediaStateEventChannel
         .receiveBroadcastStream()
         .listen(_onLocalMediaStateEvent, onError: _onLocalMediaStateError);
@@ -78,6 +86,10 @@ class ScreenMeetPlugin {
     _remoteControlEventChannel
         .receiveBroadcastStream()
         .listen(_onRemoteControlEvent, onError: _onRemoteControlError);
+
+    _featureRequestChannel
+        .receiveBroadcastStream()
+        .listen(_onFeatureRequestEvent, onError: _onFeatureRequestError);
   }
 
   // Set the listener for remote participants. Will be  fired when participant joins or leaves the room
@@ -129,7 +141,6 @@ class ScreenMeetPlugin {
     if (_localVideoListener != null) {
       _localVideoListener!(localVideo);
     }
-
   }
 
   void _onLocalVideoError(Object error) {
@@ -145,11 +156,6 @@ class ScreenMeetPlugin {
     if (_connectionStateListener != null) {
       _connectionStateListener!(connectionState as String);
     }
-
-  }
-
-  void _onConnectionStateError(Object error) {
-
   }
 
   ///Set the listener for remote control events sent by SDK. Will be fired when remote control is granted and the participant clicks mouse or keyboard
@@ -162,10 +168,25 @@ class ScreenMeetPlugin {
       RemoteControlEvent event = _pm.remoteControlEvent(eventMap);
       _remoteControlListener!(event);
     }
-
   }
 
   void _onRemoteControlError(Object error) {
+
+  }
+
+  ///Set the listener for feature permission requests that SDK receives from remote peers. Will be fired when someone requests access from you to a certain feature (for example remote controlling your screen or showing laser pointer on your screen)
+  void setFeatureRequestListener({Function(FeatureRequest)? listener}){
+    _featureRequestListener = listener;
+  }
+
+  void _onFeatureRequestEvent(var featureMap) {
+    if (_featureRequestListener != null) {
+      FeatureRequest featureRequest = _pm.featureRequest(featureMap);
+      _featureRequestListener!(featureRequest);
+    }
+  }
+
+  void _onFeatureRequestError(Object error) {
 
   }
 
@@ -176,48 +197,68 @@ class ScreenMeetPlugin {
     }
   }
 
-  Future<String> get platformVersion async {
-    final String version = await _channel.invokeMethod('getPlatformVersion');
-    return version;
-  }
-
   void attachConfidentialWidget(String id, RectGetter getter){
     _confidentialWidgets[id] = getter;
   }
 
-  void emitBounds(){
+  void emitBounds() async {
     _confidentialWidgets.forEach((k, v) {
       var rectPos = v.getRect();
       if(rectPos != null){
-          //debugPrint('LOG: $k  ${rectPos.left} ${rectPos.width} ${rectPos.top} ${rectPos.height}');
-          setConfidential(k, rectPos.left, rectPos.top, rectPos.width, rectPos.height);
+        setConfidential(k, rectPos.left, rectPos.top, rectPos.width, rectPos.height);
       }
     });
   }
 
   /// Pass the confidential rect to native SDK. This rect will be cut/hidden when sharing video(stream of your screen) with remote participants
-  void setConfidential(String id, double x, double y, double width, double height) {
+  Future<Either<ScreenMeetError, bool>> setConfidential(String id, double x, double y, double width, double height) async {
     var map = <String, dynamic>{
-      'id': id,
-      'x': x,
-      'y': y,
-      'width': width,
-      'height': height
+      _pm.kId: id,
+      _pm.kX: x,
+      _pm.kY: y,
+      _pm.kWidth: width,
+      _pm.kHeight: height
     };
 
-    _channel.invokeMethod(_pm.kSetConfidential, map);
+    final Map result = await _channel.invokeMethod(_pm.kSetConfidential, map);
+    if (_pm.isSuccess(result)) { return Right(true);}
+    return Left(_pm.error(result));
   }
 
-  void unsetConfidential(String id) {
-    _channel.invokeMethod(_pm.kUnSetConfidential, id);
+  /// Clear the confidential. This rect will not be cut/hidden when sharing video(stream of your screen) with remote participants
+  Future<Either<ScreenMeetError, bool>> unsetConfidential(String id) async {
+    final Map result = await _channel.invokeMethod(_pm.kUnSetConfidential, id);
+    if (_pm.isSuccess(result)) { return Right(true);}
+    return Left(_pm.error(result));
+  }
+
+  /// Sets initial configuration for the ScreenMeet SDK
+  Future<Either<ScreenMeetError, bool>> setConfig(ScreenMeetConfig config) async {
+    var configMap = <String, dynamic> {
+      _pm.kOrganizationKey: config.organizationKey,
+      _pm.kEndpoint: config.endpoint,
+      _pm.kCollectMetrics: config.collectMetric,
+      _pm.kLogLevel: config.loggingLevel
+    };
+
+    final Map result = await _channel.invokeMethod(_pm.kSetConfigCommand, configMap);
+    if (_pm.isSuccess(result)) { return Right(true);}
+    return Left(_pm.error(result));
   }
 
   ///Connect to the room. Room id is either 6 digits code or 12 letters full room id. userName is your user name that other participants will see
-  Future<Either<ScreenMeetError, bool>> connect(String roomId, String userName) async {
+  Future<Either<ScreenMeetConnectError, bool>> connect(String roomId, String userName) async {
     final Map result = await _channel.invokeMethod(_pm.kConnectCommand, {_pm.kConnectRoomId: roomId, _pm.kConnectUserName: userName});
 
     if (_pm.isSuccess(result)) { return Right(true);}
-    return Left(_pm.error(result));
+    return Left(_pm.connectError(result));
+  }
+
+  Future<Either<ScreenMeetConnectError, bool>> solveChallenge(String answer) async {
+    final Map result = await _channel.invokeMethod(_pm.kSolveChallenge, {_pm.kChallengeSolution: answer });
+
+    if (_pm.isSuccess(result)) { return Right(true);}
+    return Left(_pm.connectError(result));
   }
 
   Future<Either<ScreenMeetError, bool>> disconnect() async {
@@ -292,6 +333,32 @@ class ScreenMeetPlugin {
   Future<Map> shareScreen() async {
     final Map result = await _channel.invokeMethod(_pm.kShareScreenCommand);
     return result;
+  }
+
+  /// Grant the access to feature
+  Future<Either<ScreenMeetError, bool>> grantAccess(FeatureRequest request) async {
+    var featureMap = <String, dynamic> {
+      _pm.kFeatureRequestorId: request.requestorId,
+      _pm.kFeatureRequestorName: request.requestorName,
+      _pm.kFeatureType: request.type,
+    };
+
+    final Map result = await _channel.invokeMethod(_pm.kFeatureGrantAccessCommand, featureMap);
+    if (_pm.isSuccess(result)) { return Right(true);}
+    return Left(_pm.error(result));
+  }
+
+  /// Reject the access to feature
+  Future<Either<ScreenMeetError, bool>> rejectAccess(FeatureRequest request) async {
+    var featureMap = <String, dynamic> {
+      _pm.kFeatureRequestorId: request.requestorId,
+      _pm.kFeatureRequestorName: request.requestorName,
+      _pm.kFeatureType: request.type,
+    };
+
+    final Map result = await _channel.invokeMethod(_pm.kFeatureRejectAccessCommand, featureMap);
+    if (_pm.isSuccess(result)) { return Right(true);}
+    return Left(_pm.error(result));
   }
 
 }

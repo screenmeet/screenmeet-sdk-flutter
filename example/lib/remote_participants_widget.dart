@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:screenmeet_sdk_flutter/participant.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_parameters_manager.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_plugin.dart';
 
 ///Widget showing remote participants tiles
@@ -64,7 +63,6 @@ class RemoteParticipantsState extends State<RemoteParticipantsWidget> {
   @override
   Widget build(BuildContext context) {
     return Container(
-        height: 520,
         padding: const EdgeInsets.fromLTRB(10.0, 0.0, 10.0, 0.0),
         child: GridView.count(
         crossAxisCount: 2,

@@ -1,12 +1,8 @@
 package com.screenmeet.sdk_live_flutter_plugin
 
-import com.screenmeet.sdk.Participant
-import com.screenmeet.sdk.ParticipantMediaState
-import com.screenmeet.sdk.ScreenMeet
-
-
-//call: MethodCall
-//result: MethodChannel.Result
+import android.graphics.Bitmap
+import com.screenmeet.sdk.*
+import java.io.ByteArrayOutputStream
 
 const val resultStatus = "resultStatus"
 const val errorText = "errorText"
@@ -16,6 +12,8 @@ const val errorCode = "errorCode"
 const val errorCodeWrongMethodParameters = 1001
 const val errorCodeConnectFailed = 1002
 const val errorCodeNoParticipantFound = 1003
+const val errorKnowEntryPermissionRequired = 1004
+const val errorCaptchaRequired = 1005
 
 fun zipMediaState(mediaState: ParticipantMediaState): Map<String, Any> {
     return mapOf(
@@ -44,7 +42,7 @@ fun zipParticipants(participants: List<Participant>, renderers: Map<String, Flut
         )
     }
 
-    return mapOf(ChannelParams.participantsKey to list)
+    return mapOf(ChannelParams.participants to list)
 }
 
 fun zipLocalVideo(mediaState: ParticipantMediaState, textureId: Long): Map<String, Any>  {
@@ -54,6 +52,26 @@ fun zipLocalVideo(mediaState: ParticipantMediaState, textureId: Long): Map<Strin
     )
 }
 
+fun mapEntitlement(entitlement: Entitlement) = when(entitlement){
+    Entitlement.LASER_POINTER -> "laserpointer"
+    Entitlement.REMOTE_CONTROL -> "remotecontrol"
+    else -> "unknown"
+}
+
+fun zipChallenge(challenge: Challenge): Map<String, Any> {
+    val stream = ByteArrayOutputStream()
+    challenge.challenge.compress(Bitmap.CompressFormat.PNG, 100, stream)
+    val byteArray: ByteArray = stream.toByteArray()
+    challenge.challenge.recycle()
+    return mapOf(ChannelParams.challenge to byteArray)
+}
+
+fun zipFeature(feature: Feature) = mapOf(
+    ChannelParams.featureType to mapEntitlement(feature.entitlement),
+    ChannelParams.featureRequestorId to (feature.requestorId ?: ""),
+    ChannelParams.featureRequestorName to (feature.requestor?.identity?.name ?: "")
+)
+
 enum class CameraType(val type: String) {
     FRONT("front"),
     BACK("back")
@@ -61,6 +79,7 @@ enum class CameraType(val type: String) {
 
 class ChannelParams {
     companion object {
+        const val setConfigCommand = "setConfig"
         const val connectCommand = "connect"
         const val disconnectCommand = "disconnect"
         const val connectUserName = "connectUserName"
@@ -77,6 +96,7 @@ class ChannelParams {
         const val getLocalVideoCommand = "getLocalVideo"
         const val changeVideoSourceCommand = "changeVideoSource"
 
+        const val getConfidentialBounds = "getConfidentialBounds"
         const val setConfidentialCommand = "setConfidential"
         const val unsetConfidentialCommand = "unsetConfidential"
 
@@ -84,10 +104,37 @@ class ChannelParams {
         const val videoEnabled = "videoEnabled"
         const val screenEnabled = "screenEnabled"
 
-        const val participantsKey = "participants"
+        const val localParticipant = "localParticipant"
+        const val participants = "participants"
         const val participantId = "participantId"
         const val participantName = "participantName"
         const val textureId = "textureId"
         const val on = "isOn"
+
+        const val organizationKey = "organizationKey"
+        const val collectMetrics = "collectMetrics"
+        const val endpoint = "endpoint"
+        const val logLevel = "logLevel"
+
+        const val featureType = "featureType"
+        const val featureRequestorId = "featureRequestorId"
+        const val featureRequestorName = "featureRequestorName"
+
+        const val featureGrantAccessCommand = "featureGrantAccess"
+        const val featureRejectAccessCommand = "featureRejectAccess"
+
+        const val id = "id"
+        const val x = "x"
+        const val y = "y"
+        const val width = "width"
+        const val height = "height"
+
+        const val challenge = "challenge"
+        const val challengeSolution = "challengeSolution"
+        const val solveChallenge = "solveChallenge"
+
+        const val resultStatus = "resultStatus"
+        const val errorText = "errorText"
+        const val errorCode = "errorCode"
     }
 }

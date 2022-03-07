@@ -1,38 +1,52 @@
 package com.screenmeet.sdk_live_flutter_plugin
 
-import io.flutter.view.TextureRegistry
-import io.flutter.plugin.common.MethodChannel.MethodCallHandler
+import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.graphics.Rect
 import com.screenmeet.sdk.*
 import com.screenmeet.sdk.domain.entity.ChatMessage
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.challengeSolution
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.changeVideoSourceCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.collectMetrics
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.connectCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.connectRoomId
-import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.connectUserName
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.disconnectCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.featureGrantAccessCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.featureRejectAccessCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.featureType
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.getLocalVideoCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.getMediaStateCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.getParticipantsCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.height
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.id
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.logLevel
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.organizationKey
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.setConfidentialCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.setConfigCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareAudioCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareScreenCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareVideoCameraType
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareVideoCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.solveChallenge
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.stopSharingAudioCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.stopSharingVideoCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.unsetConfidentialCommand
-import com.screenmeet.sdk_live_flutter_plugin.handlers.ConnectionStreamHandler
-import com.screenmeet.sdk_live_flutter_plugin.handlers.LocalMediaStateStreamHandler
-import com.screenmeet.sdk_live_flutter_plugin.handlers.LocalVideoStreamHandler
-import com.screenmeet.sdk_live_flutter_plugin.handlers.ParticipantsStreamHandler
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.width
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.x
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.y
+import com.screenmeet.sdk_live_flutter_plugin.handlers.*
 import com.screenmeet.sdk_live_flutter_plugin.utils.AnyThreadResult
 import io.flutter.plugin.common.*
+import io.flutter.plugin.common.MethodChannel.MethodCallHandler
+import io.flutter.view.TextureRegistry
 import org.webrtc.VideoTrack
-import java.util.HashMap
+
+typealias FeatureRequestResult = (granted: Boolean) -> Unit
 
 class MethodCallHandlerImpl internal constructor(
     private val context: Context,
-    private val messenger: BinaryMessenger,
+    messenger: BinaryMessenger,
     private val textureRegistry: TextureRegistry
 ) : MethodCallHandler, SessionEventListener {
 
@@ -40,21 +54,33 @@ class MethodCallHandlerImpl internal constructor(
     private val remoteParticipantsEventChannel = "platform_channel_events/screenmeet/remoteParticipants"
     private val localMediaStateEventChannel =    "platform_channel_events/screenmeet/localMediaState"
     private val localVideoEventChannel =         "platform_channel_events/screenmeet/localVideo"
+    private val remoteControlEventChannel =      "platform_channel_events/screenmeet/remoteControl"
+    private val featureRequestEventChannel =     "platform_channel_events/screenmeet/featureRequest"
 
     private var connectionStateChannel: EventChannel
     private var localMediaStateChannel: EventChannel
     private var remoteParticipantChannel: EventChannel
     private var localVideoChannel: EventChannel
+    private var remoteControlChannel: EventChannel
+    private var featureRequestChannel: EventChannel
 
     private var connectionStreamHandler: ConnectionStreamHandler
     private var localMediaStateStreamHandler: LocalMediaStateStreamHandler
     private var participantsStreamHandler: ParticipantsStreamHandler
     private var localVideoStreamHandler: LocalVideoStreamHandler
+    private var remoteControlStreamHandler: RemoteControlStreamHandler
+    private var featureRequestStreamHandler: FeatureRequestStreamHandler
 
     private var localRenderer: FlutterRTCVideoRenderer? = null
     private var localVideoTrack: VideoTrack? = null
 
     private val renderers = mutableMapOf<String, FlutterRTCVideoRenderer>()
+    private val featureRequestCallbacks = mutableMapOf<String, FeatureRequestResult>()
+
+    private var challenge: Challenge? = null
+    private var connectResult: AnyThreadResult? = null
+
+    var activity: Activity? = null
 
     init {
         connectionStateChannel = EventChannel(messenger, connectionStateEventChannel).apply {
@@ -73,12 +99,22 @@ class MethodCallHandlerImpl internal constructor(
             localMediaStateStreamHandler = LocalMediaStateStreamHandler()
             setStreamHandler(localMediaStateStreamHandler)
         }
+        remoteControlChannel = EventChannel(messenger, remoteControlEventChannel).apply {
+            remoteControlStreamHandler = RemoteControlStreamHandler()
+            setStreamHandler(remoteControlStreamHandler)
+        }
+        featureRequestChannel = EventChannel(messenger, featureRequestEventChannel).apply {
+            featureRequestStreamHandler = FeatureRequestStreamHandler()
+            setStreamHandler(featureRequestStreamHandler)
+        }
     }
 
     override fun onMethodCall(call: MethodCall, notSafeResult: MethodChannel.Result) {
         val result = AnyThreadResult(notSafeResult)
         when (call.method) {
+            setConfigCommand -> setConfig(call, result)
             connectCommand -> connect(call, result)
+            solveChallenge -> solveChallenge(call, result)
             disconnectCommand -> {
                 ScreenMeet.disconnect()
                 clearTextures()
@@ -118,52 +154,92 @@ class MethodCallHandlerImpl internal constructor(
             }
             setConfidentialCommand -> { setConfidential(call) }
             unsetConfidentialCommand -> { unsetConfidential(call) }
-            "getPlatformVersion" -> result.success(getPlatformVersion())
+            changeVideoSourceCommand -> { changeVideoSource(result) }
+            featureGrantAccessCommand -> { handleFeatureAccessCommand(call, result,true) }
+            featureRejectAccessCommand -> { handleFeatureAccessCommand(call, result,false) }
             else -> result.notImplemented()
         }
     }
 
-    private fun getPlatformVersion() = "Android ${android.os.Build.VERSION.RELEASE}"
+    private fun setConfig(call: MethodCall, result: AnyThreadResult) {
+        val organizationKey: String? = call.argument(organizationKey)
+        //val endpoint: String? = call.argument(endpoint)
+        val collectMetrics: Boolean = call.argument(collectMetrics) ?: true
+        val logLevel: String? = call.argument(logLevel)
+
+        if(organizationKey != null && organizationKey.isNotBlank()){
+            val configuration = ScreenMeet.Configuration(organizationKey)
+            configuration.collectMetrics(collectMetrics)
+            when(logLevel){
+                "info" -> ScreenMeet.Configuration.LogLevel.INFO
+                "debug" -> ScreenMeet.Configuration.LogLevel.DEBUG
+                "error" -> ScreenMeet.Configuration.LogLevel.ERROR
+                else -> null
+            }?.let { configuration.logLevel(it) }
+
+            ScreenMeet.init(context, configuration)
+            (context as Application).registerActivityLifecycleCallbacks(ScreenMeet.activityLifecycleCallback())
+            activity?.let { ScreenMeet.setContext(it) }
+            result.successful()
+        } else result.error("OrganizationKey can not be empty!", errorCodeWrongMethodParameters)
+    }
 
     private fun connect(call: MethodCall, result: AnyThreadResult) {
         val code: String? = call.argument(connectRoomId)
-        val userName: String? = call.argument(connectUserName)
+        //val userName: String? = call.argument(connectUserName)
 
         code ?: run {
             result.error("Parameters for this channel method are wrong", errorCodeWrongMethodParameters)
             return
         }
-
+        connectResult = result
         ScreenMeet.registerEventListener(this)
         ScreenMeet.connect(code, object : CompletionHandler {
-            override fun onSuccess() { result.successful() }
+            override fun onSuccess() { connectResult?.successful() }
 
             override fun onFailure(error: CompletionError) {
-                result.error(error.message, errorCodeConnectFailed)
+                when (error.code) {
+                    ErrorCode.CAPTCHA_ERROR -> {
+                        error.challenge?.let {
+                            challenge = error.challenge
+                            connectResult?.error(error.message, errorCaptchaRequired, zipChallenge(it))
+                        } ?: connectResult?.error(error.message, errorCaptchaRequired)
+                    }
+                    ErrorCode.WAITING_FOR_KNOCK_PERMISSION -> connectResult?.error(error.message, errorKnowEntryPermissionRequired)
+                    else -> connectResult?.error(error.message, errorCodeConnectFailed)
+                }
             }
         })
     }
 
+    private fun solveChallenge(call: MethodCall, result: AnyThreadResult) {
+        val solution: String? = call.argument(challengeSolution)
+        solution ?: run {
+            result.error("Challenge solution can not be empty", errorCodeWrongMethodParameters)
+            return
+        }
+        connectResult = result
+        challenge?.solve(solution) ?: result.error("requested challenge not found. Try again", errorCodeWrongMethodParameters)
+    }
+
     private fun setConfidential(call: MethodCall) {
         try {
-            val map = call.arguments as HashMap<String, HashMap<String, Double>>
-            for ((_, value) in map) {
-                val x: Double = value["x"] ?: 0.0
-                val y: Double = value["y"] ?: 0.0
-                val width: Double = value["width"] ?: 0.0
-                val height: Double = value["height"] ?: 0.0
-                val r = Rect(x.toInt(), y.toInt(), (x + width).toInt(), (y + height).toInt())
-                //ScreenMeet.setConfidential(key, r)
-            }
+            val map = call.arguments as HashMap<*, *>
+            val key = map[id] as String
+            val x: Double = map[x] as Double
+            val y: Double = map[y] as Double
+            val width: Double = map[width] as Double
+            val height: Double = map[height] as Double
+            val r = Rect(x.toInt(), y.toInt(), (x + width).toInt(), (y + height).toInt())
+            ScreenMeet.setConfidential(key, r)
         } catch (e: ClassCastException) {
             io.flutter.Log.e("SdkLiveFlutterPlugin", "ClassCastException $e")
         }
     }
 
     private fun unsetConfidential(call: MethodCall) {
-        call.argument<String?>("id")?.let {
-            //ScreenMeet.unsetConfidential(it)
-        }
+        val args = call.arguments
+        if(args is String) ScreenMeet.unsetConfidential(args)
     }
 
     private fun sendMediaState() {
@@ -216,6 +292,15 @@ class MethodCallHandlerImpl internal constructor(
         }
     }
 
+    private fun changeVideoSource(result: AnyThreadResult){
+        when(ScreenMeet.localMediaState().videoState.source){
+            ScreenMeet.VideoSource.FRONT_CAMERA -> ScreenMeet.shareCamera(false)
+            ScreenMeet.VideoSource.BACK_CAMERA -> ScreenMeet.shareCamera(true)
+            else -> {}
+        }
+        result.successful()
+    }
+
     private fun handleShareVideoCommand(call: MethodCall, result: AnyThreadResult) {
         call.argument<String?>(shareVideoCameraType)?.let { cameraType ->
             when(cameraType){
@@ -227,11 +312,22 @@ class MethodCallHandlerImpl internal constructor(
                     ScreenMeet.shareCamera(false)
                     result.successful()
                 }
-                else -> {
-                    result.error("Parameters for this channel method are wrong. Unknown camera type", errorCodeWrongMethodParameters)
-                }
+                else -> result.error(
+                    "Parameters for this channel method are wrong. Unknown camera type",
+                    errorCodeWrongMethodParameters
+                )
             }
         }
+    }
+
+    private fun handleFeatureAccessCommand(call: MethodCall, result: AnyThreadResult, granted: Boolean) {
+        (call.arguments as? HashMap<*, *>)?.let {
+            (it[featureType] as? String)?.let { featureType ->
+                featureRequestCallbacks[featureType]?.let { decisionHandler ->
+                    decisionHandler(granted)
+                } ?: result.error("Parameters for this channel method are wrong. Feature request with given requestor id or type not found", errorCodeWrongMethodParameters)
+            } ?: result.error("Parameters for this channel method are wrong. Feature requestor id or feature type", errorCodeWrongMethodParameters)
+        } ?: result.error("Parameters for this channel method are wrong", errorCodeWrongMethodParameters)
     }
 
     private fun clearTextures()  {
@@ -243,8 +339,6 @@ class MethodCallHandlerImpl internal constructor(
     }
 
     override fun onActiveSpeakerChanged(participant: Participant) { }
-
-    override fun onChatMessage(chatMessage: ChatMessage) { }
 
     override fun onConnectionStateChanged(newState: ScreenMeet.ConnectionState) {
         if (newState.state == ScreenMeet.SessionState.DISCONNECTED){
@@ -278,7 +372,24 @@ class MethodCallHandlerImpl internal constructor(
 
     override fun onParticipantMediaStateChanged(participant: Participant) { sendParticipants() }
 
-    fun dispose(){
-        clearTextures()
+    override fun onChatMessage(chatMessage: ChatMessage) { }
+
+    override fun onFeatureRequest(feature: Feature, decisionHandler: FeatureRequestResult) {
+        featureRequestCallbacks[mapEntitlement(feature.entitlement)] = decisionHandler
+        featureRequestStreamHandler.sendPermissionRequest(feature)
     }
+
+    override fun onFeatureRequestRejected(entitlement: Entitlement) {
+        featureRequestCallbacks.remove(mapEntitlement( entitlement))
+    }
+
+    override fun onFeatureStarted(feature: Feature) {
+
+    }
+
+    override fun onFeatureStopped(feature: Feature) {
+
+    }
+
+    fun dispose(){ clearTextures() }
 }
