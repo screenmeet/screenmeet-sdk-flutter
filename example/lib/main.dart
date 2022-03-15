@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:screenmeet_flutter_plugin_example/local_video_widget.dart';
 import 'package:screenmeet_sdk_flutter/confidential_widget.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_parameters_manager.dart';
@@ -30,7 +31,12 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    ScreenMeetConfig config = ScreenMeetConfig(organizationKey: '');
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp
+    ]);
+
+    //TODO Replace null with API Key
+    ScreenMeetConfig config = ScreenMeetConfig(organizationKey: "");
     ScreenMeetPlugin().setConfig(config);
   }
 
@@ -123,58 +129,69 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
 
   void displayCaptcha(Uint8List challenge){
     final TextEditingController captchaController = TextEditingController(text: "");
+    bool pressed = false;
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(20.0)
-          ),
-          child: Container(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Image.memory(challenge, width: 250, height: 100, fit: BoxFit.fill),
-                  TextField(
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: 'What code is in the image?'),
-                  ),
-                  TextField(
-                    onSubmitted: (newValue){},
-                    textAlign: TextAlign.center,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    style: TextStyle(fontSize: 24),
-                    autofocus: true,
-                    decoration: InputDecoration(counterText: ""),
-                    controller: captchaController
-                  ),
-                  Wrap(
-                    children:[
-                      ElevatedButton(
-                        onPressed: () async {
-                          var response = await ScreenMeetPlugin().solveChallenge(captchaController.text);
-                          processConnectResponse(response);
-                        },
-                        child: Text(
-                          "Complete",
-                          style: TextStyle(color: Colors.white),
-                        )
+        return StatefulBuilder(builder: (context, setState) {
+          return Dialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20.0)
+              ),
+              child: Container(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Image.memory(challenge, width: 250,
+                                height: 100,
+                                fit: BoxFit.fill),
+                            TextField(
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                              decoration: InputDecoration(
+                                  border: InputBorder.none,
+                                  hintText: 'What code is in the image?'),
+                            ),
+                            TextField(
+                                onSubmitted: (newValue) {},
+                                textAlign: TextAlign.center,
+                                keyboardType: TextInputType.number,
+                                maxLength: 6,
+                                style: TextStyle(fontSize: 24),
+                                autofocus: true,
+                                decoration: InputDecoration(counterText: ""),
+                                controller: captchaController
+                            ),
+                            Wrap(
+                                children: [
+                                  pressed ? Container(
+                                    margin: const EdgeInsets.fromLTRB(0.0, 2.0, 0.0, 12.0),
+                                    child: CircularProgressIndicator(strokeWidth: 1.0)
+                                  ) : ElevatedButton(
+                                      onPressed: () async {
+                                        setState(() { pressed = true; });
+                                        var response = await ScreenMeetPlugin()
+                                            .solveChallenge(
+                                            captchaController.text);
+                                        processConnectResponse(response);
+                                      },
+                                      child: Text(
+                                        "Complete",
+                                        style: TextStyle(color: Colors.white),
+                                      )
+                                  )
+                                ]
+                            )
+                          ]
                       )
-                    ]
                   )
-                ]
               )
-            )
-          )
-        );
+          );
+        });
       }
     );
   }
@@ -453,7 +470,6 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
 
     return Container(
         margin: EdgeInsets.fromLTRB(0, 0, 0, 0),
-      //margin: EdgeInsets.symmetric(vertical: 10.0),
         child: ListView(
             scrollDirection: Axis.horizontal,
             children: list

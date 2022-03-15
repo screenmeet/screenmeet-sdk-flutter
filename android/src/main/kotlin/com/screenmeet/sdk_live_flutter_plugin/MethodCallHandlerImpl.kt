@@ -275,13 +275,11 @@ class MethodCallHandlerImpl internal constructor(
     private fun handleTexturesForRemoteParticipants(participants: List<Participant>) {
         participants.forEach { participant ->
             if (participant.mediaState.isVideoActive && participant.videoTrack != null) {
-                if (renderers[participant.id] == null) {
-                    val entry = textureRegistry.createSurfaceTexture()
-                    val surfaceTexture = entry.surfaceTexture()
-                    val renderer = FlutterRTCVideoRenderer(surfaceTexture, entry)
-                    renderers[participant.id] = renderer
-                    renderer.setVideoTrack(participant.videoTrack)
-                }
+                val entry = textureRegistry.createSurfaceTexture()
+                val surfaceTexture = entry.surfaceTexture()
+                val renderer = FlutterRTCVideoRenderer(surfaceTexture, entry)
+                renderers[participant.id] = renderer
+                renderer.setVideoTrack(participant.videoTrack)
             } else if (!participant.mediaState.isVideoActive) {
                 renderers[participant.id]?.let { renderer ->
                     renderer.setVideoTrack(null)
@@ -383,13 +381,9 @@ class MethodCallHandlerImpl internal constructor(
         featureRequestCallbacks.remove(mapEntitlement( entitlement))
     }
 
-    override fun onFeatureStarted(feature: Feature) {
+    override fun onFeatureStarted(feature: Feature) { }
 
-    }
-
-    override fun onFeatureStopped(feature: Feature) {
-
-    }
+    override fun onFeatureStopped(feature: Feature) { }
 
     fun dispose(){ clearTextures() }
 }
