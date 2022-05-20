@@ -21,6 +21,7 @@ class SwiftChannelParamsManager: NSObject {
     let kConnectRoomId = "connectRoomId"
     
     let kShareScreenCommand = "shareScreen"
+    let kShareScreenWithImageTransferCommand = "shareScreenWithImageTransfer"
     let kShareVideoCommand = "shareVideo"
     let kStopSharingVideoCommand = "stopSharingVideo"
     let kShareAudioCommand = "shareAudio"
@@ -89,6 +90,7 @@ class SwiftChannelParamsManager: NSObject {
     let kErrorCodeConnectFailed = 1002
     let kErrorCodeNoParticipantFound = 1003
     let kErrorKnowEntryPermissionRequired = 1004
+    let kErrorCouldNotStartImageTransferSession = 1005
     
     func error(_ text: String, _ code: Int) -> [String: Any] {
         return [kResultStatus: false, kErrorText: text, kErrorCode: code]

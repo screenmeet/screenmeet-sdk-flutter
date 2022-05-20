@@ -1,8 +1,7 @@
 package com.screenmeet.sdk_live_flutter_plugin.utils
 
-import java.lang.IllegalArgumentException
-import java.util.ArrayList
-import java.util.HashMap
+import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
 
 class ConstraintsMap {
 

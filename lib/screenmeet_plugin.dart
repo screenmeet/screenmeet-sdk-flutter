@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:either_dart/either.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:rect_getter/rect_getter.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_connect_error.dart';
 
@@ -18,6 +21,31 @@ class ScreenMeetPlugin {
 
   static final ScreenMeetPlugin _singleton = ScreenMeetPlugin._internal();
   factory ScreenMeetPlugin() { return _singleton; }
+
+  int _screenShotImeInterval = 71;
+  GlobalKey? _previewContainerKey;
+
+  Duration _lastScreenDuration = Duration();
+  bool _keepOnTakingScreenShots = false;
+
+  /// Screen sharing frame rate
+  /// Default is 14fps. For flutter engine this is the optimal fps that works on all devices
+  int get frameRate => 1000 ~/ _screenShotImeInterval;
+
+  /// Set the screen sharing frame rate
+  /// The [frameRate] describes the amount of frames (screen shots) per one second
+  /// that will be send to the remote peers
+  /// Maximum frame rate for flutter engine is 20. Any value set higher than this will be saved as 20 fps
+  /// This is limited cause of the flutter Isolate engine and image processing capabilities of flutter itself
+  /// for the using app
+  set frameRate(int frameRate) => _screenShotImeInterval = (frameRate > 20) ? _screenShotImeInterval = 1000 ~/ frameRate : _screenShotImeInterval;
+
+  /// The key of the widget that tis content will be shared during screen sharing
+  GlobalKey? get screenSharingKey => _previewContainerKey;
+
+  /// Set the key of the widget that its content will be shared during screen sharing
+  set screenSharingKey(GlobalKey? key) => _previewContainerKey = key;
+
   ScreenMeetPlugin._internal() {
     _init();
   }
@@ -43,6 +71,9 @@ class ScreenMeetPlugin {
   // The channel to receive permission requests from ScreenMeet SDK (which in  its turn is requested by remote peers to grant access fot remote control or laser pointer fox example )
   final EventChannel _featureRequestChannel = EventChannel('platform_channel_events/screenmeet/featureRequest');
 
+  // The channel to send raw images for the image sharing session
+  final BasicMessageChannel _imageTransferChannel = BasicMessageChannel('platform_channel_events/screenmeet/imageTransfer', StandardMessageCodec());
+
   Map _confidentialWidgets = Map<String, RectGetter>();
 
   // Listener for local media state changes. Will be fired when audio, video, screen sharing is turned on/off
@@ -61,11 +92,9 @@ class ScreenMeetPlugin {
   void Function(RemoteControlEvent)? _remoteControlListener;
 
   //Listener for feature permission requests that SDK receives from remote peers. Will be fired when someone requests access from you to a certain feature (for example remote controlling your screen or showing laser pointer on your screen)
-  void Function(FeatureRequest)? _featureRequestListener;
+  void Function(FeatureRequest?, FeatureCancelation?)? _featureRequestListener;
 
   void _init(){
-    _channel.setMethodCallHandler(handle);
-
     //setup event channels that should receive events from native SDK
     _localMediaStateEventChannel
         .receiveBroadcastStream()
@@ -90,6 +119,15 @@ class ScreenMeetPlugin {
     _featureRequestChannel
         .receiveBroadcastStream()
         .listen(_onFeatureRequestEvent, onError: _onFeatureRequestError);
+
+    WidgetsBinding.instance.addPersistentFrameCallback((timeStamp) async {
+      if (_keepOnTakingScreenShots) {
+        if ((timeStamp - _lastScreenDuration).inMilliseconds > _screenShotImeInterval) {
+          takeScreenShot();
+          _lastScreenDuration = timeStamp;
+        }
+      }
+    });
   }
 
   // Set the listener for remote participants. Will be  fired when participant joins or leaves the room
@@ -174,15 +212,21 @@ class ScreenMeetPlugin {
 
   }
 
-  ///Set the listener for feature permission requests that SDK receives from remote peers. Will be fired when someone requests access from you to a certain feature (for example remote controlling your screen or showing laser pointer on your screen)
-  void setFeatureRequestListener({Function(FeatureRequest)? listener}){
+  ///Set the listener for feature permission requests that SDK receives from remote peers.
+  ///Will be fired when someone requests access from you to a certain feature (for example remote controlling your screen or showing laser pointer on your screen)
+  void setFeatureRequestListener({Function(FeatureRequest?, FeatureCancelation?)? listener}){
     _featureRequestListener = listener;
   }
 
   void _onFeatureRequestEvent(var featureMap) {
     if (_featureRequestListener != null) {
-      FeatureRequest featureRequest = _pm.featureRequest(featureMap);
-      _featureRequestListener!(featureRequest);
+        if(_pm.isFeatureCancel(featureMap)){
+          FeatureCancelation featureCancelation = _pm.featureCancelation(featureMap);
+          _featureRequestListener!(null, featureCancelation);
+        } else {
+          FeatureRequest featureRequest = _pm.featureRequest(featureMap);
+          _featureRequestListener!(featureRequest, null);
+        }
     }
   }
 
@@ -190,24 +234,18 @@ class ScreenMeetPlugin {
 
   }
 
-  Future<void> handle(MethodCall call) async {
-    switch(call.method) {
-      case "getConfidentialBounds":
-        emitBounds();
-    }
-  }
-
   void attachConfidentialWidget(String id, RectGetter getter){
     _confidentialWidgets[id] = getter;
   }
 
-  void emitBounds() async {
-    _confidentialWidgets.forEach((k, v) {
-      var rectPos = v.getRect();
-      if(rectPos != null){
-        setConfidential(k, rectPos.left, rectPos.top, rectPos.width, rectPos.height);
-      }
+  List<RectGetter> listOfWidgetRects() {
+
+    List<RectGetter> rects = [];
+    _confidentialWidgets.forEach((key, value) {
+      rects.add(value);
     });
+
+    return rects;
   }
 
   /// Pass the confidential rect to native SDK. This rect will be cut/hidden when sharing video(stream of your screen) with remote participants
@@ -262,6 +300,7 @@ class ScreenMeetPlugin {
   }
 
   Future<Either<ScreenMeetError, bool>> disconnect() async {
+    _keepOnTakingScreenShots = false;
     final Map result = await _channel.invokeMethod(_pm.kDisconnectCommand);
 
     if (_pm.isSuccess(result)) { return Right(true);}
@@ -272,6 +311,7 @@ class ScreenMeetPlugin {
   ///
   /// For now cameraType can be either front or back. See [CameraType]
   Future<Either<ScreenMeetError, bool>> shareVideo(String cameraType) async {
+    _keepOnTakingScreenShots = false;
     final Map result = await _channel.invokeMethod(_pm.kShareVideoCommand, {_pm.kShareVideoCameraType: cameraType});
 
     if (_pm.isSuccess(result)) { return Right(true);}
@@ -280,6 +320,7 @@ class ScreenMeetPlugin {
 
   ///Stop sharing your video
   Future<Either<ScreenMeetError, bool>> stopVideoSharing() async {
+    _keepOnTakingScreenShots = false;
     final Map result = await _channel.invokeMethod(_pm.kStopSharingVideoCommand);
 
     if (_pm.isSuccess(result)) { return Right(true);}
@@ -335,6 +376,50 @@ class ScreenMeetPlugin {
     return result;
   }
 
+  ///Share your screen by continuously providing screenshots of the previewContainerKey renderer
+  Future<Either<ScreenMeetError, bool>> shareScreenWithImageTransfer() async {
+    final Map result = await _channel.invokeMethod(_pm.kShareScreenWithImageTransferCommand);
+    if (_pm.isSuccess(result)) {
+      startCapturingImages();
+      return Right(true);
+    }
+    return Left(_pm.error(result));
+  }
+
+  void sendScreenShot (ByteData image, List<Rect> rects) async {
+    final items = List.generate(rects.length + 1, (i) => i == 0 ? image.buffer.asUint8List() : _pm.rectToMap(rects[i-1]));
+
+    _imageTransferChannel.send(items);
+  }
+
+  void startCapturingImages() {
+    _keepOnTakingScreenShots = true;
+  }
+
+  void takeScreenShot() async {
+    if (_previewContainerKey != null) {
+      List<Rect> rects = [];
+      ScreenMeetPlugin().listOfWidgetRects().forEach((rectGetter) {
+        var rect = rectGetter.getRect();
+        if (rect != null) {
+          rects.add(rect);
+        }
+      });
+
+      var previewContainerKey = ScreenMeetPlugin().screenSharingKey;
+      var boundary = previewContainerKey!.currentContext!.findRenderObject() as RenderRepaintBoundary;
+
+      var image = await boundary.toImage(pixelRatio: 1.0);
+      var byteData = await image.toByteData(format: ImageByteFormat.png);
+
+      sendScreenShot(byteData!, rects);
+    }
+    else {
+      // no key of the preview  widget has been set
+    }
+
+  }
+
   /// Grant the access to feature
   Future<Either<ScreenMeetError, bool>> grantAccess(FeatureRequest request) async {
     var featureMap = <String, dynamic> {
@@ -360,7 +445,6 @@ class ScreenMeetPlugin {
     if (_pm.isSuccess(result)) { return Right(true);}
     return Left(_pm.error(result));
   }
-
 }
 
 ///Camera types to share in the call

@@ -11,6 +11,7 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
     private let kLocalVideoEventChannel = "platform_channel_events/screenmeet/localVideo"
     private let kRemoteControlEventChannel = "platform_channel_events/screenmeet/remoteControl"
     private let kFeatureRequestChannel = "platform_channel_events/screenmeet/featureRequest"
+    private let kImageTransferChannel = "platform_channel_events/screenmeet/imageTransfer"
     
     private var connectionStateEventChannel: FlutterEventChannel!
     private var localMediaStateEventChannel: FlutterEventChannel!
@@ -18,6 +19,7 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
     private var localVideoEventChannel: FlutterEventChannel!
     private var remoteControlEventChannel: FlutterEventChannel!
     private var featureRequestsChannel: FlutterEventChannel!
+    private var imageTransferChannel: FlutterBasicMessageChannel!
     
     private var connectionStreamHandler: ConnectionStreamHandler!
     private var localMediaStateStreamHandler: LocalMediaStateStreamHandler!
@@ -38,6 +40,8 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
     private var localRenderer: FlutterRTCVideoRenderer? = nil
     private var localVideoTrack: RTCVideoTrack? = nil
     
+    private var imageHandler: SMImageHandler!
+    
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "sdk_live_flutter_plugin", binaryMessenger: registrar.messenger())
         let instance = SwiftSdkLiveFlutterPlugin(registrar.textures(), registrar.messenger(), registrar)
@@ -56,8 +60,9 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
         connectionStateEventChannel = FlutterEventChannel(name: kConnectionStateEventChannel, binaryMessenger: registrar.messenger())
         localVideoEventChannel = FlutterEventChannel(name: kLocalVideoEventChannel, binaryMessenger: registrar.messenger())
         remoteControlEventChannel = FlutterEventChannel(name: kRemoteControlEventChannel, binaryMessenger: registrar.messenger())
-        
         featureRequestsChannel = FlutterEventChannel(name: kFeatureRequestChannel, binaryMessenger: registrar.messenger())
+        
+        imageTransferChannel = FlutterBasicMessageChannel(name: kImageTransferChannel, binaryMessenger: registrar.messenger(), codec: FlutterStandardMessageCodec.sharedInstance())
 
         connectionStreamHandler = ConnectionStreamHandler()
         connectionStateEventChannel.setStreamHandler(connectionStreamHandler)
@@ -76,6 +81,44 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
         
         featureRequestStreamHandler = FeatureRequestStreamHandler()
         featureRequestsChannel.setStreamHandler(featureRequestStreamHandler)
+        
+        imageTransferChannel.setMessageHandler { [unowned self] params, reply in
+            /*The array of parameters contains raw image data as the first element, then followed by any number of dictionaries of rects*/
+            if let items = params as? [Any] {
+                
+                if let flutterData = items[0] as? FlutterStandardTypedData {
+                    let scale = 1.0 / UIScreen.main.scale
+                    var image = UIImage(data: flutterData.data, scale: scale)
+                    if items.count > 1 {
+                        for i in 1...(items.count-1) {
+                            if let dict = items[i] as? [String: Double]  {
+                                let rect = CGRect(x: dict[pm.kX]! * UIScreen.main.scale, y: dict[pm.kY]! * UIScreen.main.scale, width: dict[pm.kWidth]! * UIScreen.main.scale, height: dict[pm.kHeight]! * UIScreen.main.scale)
+                                image = drawRectangleOnImage(rect, image!)
+                            }
+                        }
+                    }
+                    
+                    imageHandler.transferImage(image!)
+                }
+            }
+        }
+    }
+    
+    func drawRectangleOnImage(_ rectangle: CGRect, _ image: UIImage) -> UIImage {
+        let imageSize = image.size
+        let scale: CGFloat = 0
+        UIGraphicsBeginImageContextWithOptions(imageSize, false, scale)
+
+        image.draw(at: CGPoint.zero)
+
+        //let rectangle = CGRect(x: 0, y: (imageSize.height/2) - 30, width: imageSize.width, height: 60)
+
+        UIColor.black.setFill()
+        UIRectFill(rectangle)
+
+        let newImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return newImage!
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -152,6 +195,19 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
             ScreenMeet.shareScreen()
             result(pm.success())
         }
+        
+        else if (call.method == pm.kShareScreenWithImageTransferCommand) {
+            ScreenMeet.shareScreenWithImageTransfer { [unowned self] handler in
+                if let handler = handler {
+                    imageHandler = handler
+                    result(pm.success())
+                }
+                else {
+                    result(pm.error("Could not start image transfer session", pm.kErrorCouldNotStartImageTransferSession))
+                }
+            }
+            
+        }
         else if (call.method == pm.kChangeVideoSourceCommand) {
             let frontCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: AVMediaType.video, position: .front)
             let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: AVMediaType.video, position: .back)
@@ -213,6 +269,10 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
                 let y = arguments[pm.kY] as? Double,
                 let width = arguments[pm.kWidth] as? Double,
                 let height = arguments[pm.kHeight] as? Double {
+                    
+                    if let previousRect = confidentialRects[id] {
+                        ScreenMeet.getAppStreamService().unsetConfidential(rect: previousRect)
+                    }
                     let rect = CGRect(x: x, y: y, width: width, height: height)
                     confidentialRects[id] = rect
                     ScreenMeet.getAppStreamService().setConfidential(rect: rect)
@@ -337,6 +397,36 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
             renderer.dispose()
         }
         renderers = [String: FlutterRTCVideoRenderer]()
+    }
+    
+    
+    private func overlay(rect: CGRect, over image: CIImage) -> CIImage {
+        let overlayImage = imageWith(rect, .blue)
+        
+        guard let overlayCIImage = CIImage(image: overlayImage) else { return image }
+        guard let cropFilter = CIFilter(name: "CICrop") else { return image }
+        
+        cropFilter.setValue(overlayCIImage, forKey: kCIInputImageKey)
+        cropFilter.setValue(CIVector(cgRect: rect), forKey: "inputRectangle")
+        
+        guard let overCompositingFilter = CIFilter(name: "CISourceOverCompositing") else { return image }
+        
+        overCompositingFilter.setValue(cropFilter.outputImage, forKey: kCIInputImageKey)
+        overCompositingFilter.setValue(image, forKey: kCIInputBackgroundImageKey)
+        
+        guard let outputImage = overCompositingFilter.outputImage else { return image }
+        
+        return outputImage
+    }
+    
+    private func imageWith(_ rect: CGRect, _ color: UIColor) -> UIImage {
+        UIGraphicsBeginImageContextWithOptions(rect.size, false, 0.0)
+        color.setFill()
+        UIRectFill(rect)
+        let image = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        return UIImage.init(cgImage: image!.cgImage!)
     }
 }
 

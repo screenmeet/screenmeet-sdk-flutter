@@ -54,6 +54,7 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
         sourceCompatibility JavaVersion.VERSION_1_8
     }
+    namespace 'com.screenmeet.sdk_live_flutter_plugin_example'
 }
 
 flutter {

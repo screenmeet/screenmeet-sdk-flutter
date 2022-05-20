@@ -1,7 +1,8 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:screenmeet_sdk_flutter/media_state.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_plugin.dart';
-
 /// A widget that allows to interact with a call
 ///
 /// It contains mute, video, screen share buttons. User can turn on/off his audio, video, screen capture when
@@ -17,6 +18,8 @@ class CallControlsWidget extends StatefulWidget {
 
 class _CallControlsState extends State<CallControlsWidget> {
 
+  var keepSendingScreenShots = true;
+
   /// The state of your own media during the call (audio, video, screen sharing)
   MediaState mediaState = MediaState.stopped();
 
@@ -25,6 +28,7 @@ class _CallControlsState extends State<CallControlsWidget> {
   void updateCallControlsState(MediaState newMediaState) async {
     setState(() {
       this.mediaState = newMediaState;
+      keepSendingScreenShots = mediaState.isSharingScreen;
     });
   }
 
@@ -50,7 +54,6 @@ class _CallControlsState extends State<CallControlsWidget> {
             (error) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.text))),
             (mediaState) =>setState(() { this.mediaState = mediaState;})
     );
-
   }
 
   @override
@@ -102,7 +105,12 @@ class _CallControlsState extends State<CallControlsWidget> {
                   await ScreenMeetPlugin().stopVideoSharing();
                 }
                 else {
-                  await ScreenMeetPlugin().shareScreen();
+                  var response = await ScreenMeetPlugin().shareScreenWithImageTransfer();
+
+                  response.fold(
+                          (error) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.text))),
+                          (imageHandler) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Screen sharing started...")))
+                  );
                 }
               },
               child: Icon(mediaState.isSharingScreen ? Icons.mobile_screen_share : Icons.mobile_off, color: Colors.white, size: 20),

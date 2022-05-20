@@ -1,8 +1,8 @@
 package com.screenmeet.sdk_live_flutter_plugin.utils
 
 import android.os.Handler
-import io.flutter.plugin.common.EventChannel.EventSink
 import android.os.Looper
+import io.flutter.plugin.common.EventChannel.EventSink
 
 class AnyThreadSink(private val eventSink: EventSink) : EventSink {
     private val handler = Handler(Looper.getMainLooper())

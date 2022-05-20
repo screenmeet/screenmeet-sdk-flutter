@@ -3,7 +3,7 @@ package com.screenmeet.sdk_live_flutter_plugin
 import android.app.Activity
 import android.app.Application
 import android.content.Context
-import android.graphics.Rect
+import android.graphics.*
 import com.screenmeet.sdk.*
 import com.screenmeet.sdk.domain.entity.ChatMessage
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.challengeSolution
@@ -26,6 +26,7 @@ import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.setConfide
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.setConfigCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareAudioCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareScreenCommand
+import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareScreenWithImageTransfer
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareVideoCameraType
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.shareVideoCommand
 import com.screenmeet.sdk_live_flutter_plugin.ChannelParams.Companion.solveChallenge
@@ -56,6 +57,7 @@ class MethodCallHandlerImpl internal constructor(
     private val localVideoEventChannel =         "platform_channel_events/screenmeet/localVideo"
     private val remoteControlEventChannel =      "platform_channel_events/screenmeet/remoteControl"
     private val featureRequestEventChannel =     "platform_channel_events/screenmeet/featureRequest"
+    private val imageTransferEventChannel =      "platform_channel_events/screenmeet/imageTransfer"
 
     private var connectionStateChannel: EventChannel
     private var localMediaStateChannel: EventChannel
@@ -63,6 +65,7 @@ class MethodCallHandlerImpl internal constructor(
     private var localVideoChannel: EventChannel
     private var remoteControlChannel: EventChannel
     private var featureRequestChannel: EventChannel
+    private var imageTransferChannel: BasicMessageChannel<Any>
 
     private var connectionStreamHandler: ConnectionStreamHandler
     private var localMediaStateStreamHandler: LocalMediaStateStreamHandler
@@ -70,6 +73,7 @@ class MethodCallHandlerImpl internal constructor(
     private var localVideoStreamHandler: LocalVideoStreamHandler
     private var remoteControlStreamHandler: RemoteControlStreamHandler
     private var featureRequestStreamHandler: FeatureRequestStreamHandler
+    private var imageTransferStreamHandler: ImageTransferStreamHandler<Any>
 
     private var localRenderer: FlutterRTCVideoRenderer? = null
     private var localVideoTrack: VideoTrack? = null
@@ -79,6 +83,8 @@ class MethodCallHandlerImpl internal constructor(
 
     private var challenge: Challenge? = null
     private var connectResult: AnyThreadResult? = null
+
+    private var flutterDelegate: FlutterDelegate = FlutterDelegate()
 
     var activity: Activity? = null
 
@@ -107,6 +113,15 @@ class MethodCallHandlerImpl internal constructor(
             featureRequestStreamHandler = FeatureRequestStreamHandler()
             setStreamHandler(featureRequestStreamHandler)
         }
+
+        imageTransferChannel = BasicMessageChannel(
+            messenger,
+            imageTransferEventChannel,
+            StandardMessageCodec.INSTANCE
+        ).apply {
+            imageTransferStreamHandler = ImageTransferStreamHandler(flutterDelegate)
+            setMessageHandler(imageTransferStreamHandler)
+        }
     }
 
     override fun onMethodCall(call: MethodCall, notSafeResult: MethodChannel.Result) {
@@ -121,6 +136,10 @@ class MethodCallHandlerImpl internal constructor(
                 result.successful()
             }
             shareScreenCommand -> {
+                ScreenMeet.shareScreen()
+                result.successful()
+            }
+            shareScreenWithImageTransfer -> {
                 ScreenMeet.shareScreen()
                 result.successful()
             }
@@ -178,6 +197,7 @@ class MethodCallHandlerImpl internal constructor(
             }?.let { configuration.logLevel(it) }
 
             ScreenMeet.init(context, configuration)
+            ScreenMeet.setFlutterDelegate(flutterDelegate)
             (context as Application).registerActivityLifecycleCallbacks(ScreenMeet.activityLifecycleCallback())
             activity?.let { ScreenMeet.setContext(it) }
             result.successful()
@@ -195,7 +215,9 @@ class MethodCallHandlerImpl internal constructor(
         connectResult = result
         ScreenMeet.registerEventListener(this)
         ScreenMeet.connect(code, object : CompletionHandler {
-            override fun onSuccess() { connectResult?.successful() }
+            override fun onSuccess() {
+                connectResult?.successful()
+            }
 
             override fun onFailure(error: CompletionError) {
                 when (error.code) {
@@ -263,7 +285,7 @@ class MethodCallHandlerImpl internal constructor(
         if (mediaState.isVideoActive && mediaState.videoState.cameraEnabled) {
             val entry = textureRegistry.createSurfaceTexture()
             val surfaceTexture = entry.surfaceTexture()
-            localRenderer = FlutterRTCVideoRenderer(surfaceTexture, entry)
+            localRenderer = FlutterRTCVideoRenderer(surfaceTexture, entry, ScreenMeet.eglContext)
             localRenderer?.setVideoTrack(localVideoTrack)
         } else {
             localRenderer?.setVideoTrack(null)
@@ -277,7 +299,7 @@ class MethodCallHandlerImpl internal constructor(
             if (participant.mediaState.isVideoActive && participant.videoTrack != null) {
                 val entry = textureRegistry.createSurfaceTexture()
                 val surfaceTexture = entry.surfaceTexture()
-                val renderer = FlutterRTCVideoRenderer(surfaceTexture, entry)
+                val renderer = FlutterRTCVideoRenderer(surfaceTexture, entry, null)
                 renderers[participant.id] = renderer
                 renderer.setVideoTrack(participant.videoTrack)
             } else if (!participant.mediaState.isVideoActive) {
@@ -345,9 +367,13 @@ class MethodCallHandlerImpl internal constructor(
         connectionStreamHandler.sendConnectionState(newState)
     }
 
-    override fun onLocalAudioCreated() { sendMediaState() }
+    override fun onLocalAudioCreated() {
+        sendMediaState()
+    }
 
-    override fun onLocalAudioStopped() { sendMediaState() }
+    override fun onLocalAudioStopped() {
+        sendMediaState()
+    }
 
     override fun onLocalVideoCreated(videoTrack: VideoTrack) {
         localVideoTrack = videoTrack
@@ -379,11 +405,16 @@ class MethodCallHandlerImpl internal constructor(
 
     override fun onFeatureRequestRejected(entitlement: Entitlement) {
         featureRequestCallbacks.remove(mapEntitlement( entitlement))
+        featureRequestStreamHandler.sendFeatureCancel(entitlement)
     }
 
-    override fun onFeatureStarted(feature: Feature) { }
+    override fun onFeatureStarted(feature: Feature) {
 
-    override fun onFeatureStopped(feature: Feature) { }
+    }
+
+    override fun onFeatureStopped(feature: Feature) {
+
+    }
 
     fun dispose(){ clearTextures() }
 }

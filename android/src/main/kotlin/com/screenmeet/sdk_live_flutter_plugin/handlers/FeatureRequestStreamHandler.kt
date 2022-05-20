@@ -1,7 +1,9 @@
 package com.screenmeet.sdk_live_flutter_plugin.handlers
 
+import com.screenmeet.sdk.Entitlement
 import com.screenmeet.sdk.Feature
 import com.screenmeet.sdk_live_flutter_plugin.zipFeature
+import com.screenmeet.sdk_live_flutter_plugin.zipFeatureCancel
 import io.flutter.plugin.common.EventChannel
 
 class FeatureRequestStreamHandler: EventChannel.StreamHandler {
@@ -13,6 +15,10 @@ class FeatureRequestStreamHandler: EventChannel.StreamHandler {
 
     fun sendPermissionRequest(feature: Feature) {
         sink?.success(zipFeature(feature))
+    }
+
+    fun sendFeatureCancel(entitlement: Entitlement) {
+        sink?.success(zipFeatureCancel(entitlement))
     }
 
 }

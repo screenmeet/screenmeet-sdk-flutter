@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:screenmeet_sdk_flutter/screenmeet_connect_error.dart';
 
 import 'feature_request.dart';
@@ -21,6 +23,7 @@ class ScreenMeetParametersManager {
   final String _kConnectRoomId = "connectRoomId";
 
   final String _kShareScreenCommand = "shareScreen";
+  final String _kShareScreenWithImageTransferCommand = "shareScreenWithImageTransfer";
   final String _kStopSharingVideoCommand = "stopSharingVideo";
   final String _kStopSharingAudioCommand = "stopSharingAudio";
   final String _kChangeVideoSourceCommand = "changeVideoSource";
@@ -83,6 +86,7 @@ class ScreenMeetParametersManager {
   final String _kRemoteControlEventKeyboardKey = "remoteControlEventKeyboardKey";
 
   final String _kFeatureType = "featureType";
+  final String _kFeatureCancel = "featureCancel";
   final String _kFeatureRequestorId = "featureRequestorId";
   final String _kFeatureRequestorName = "featureRequestorName";
 
@@ -93,6 +97,7 @@ class ScreenMeetParametersManager {
   String get kConnectRoomId => _kConnectRoomId;
 
   String get kShareScreenCommand => _kShareScreenCommand;
+  String get kShareScreenWithImageTransferCommand => _kShareScreenWithImageTransferCommand;
   String get kStopSharingVideoCommand => _kStopSharingVideoCommand;
   String get kStopSharingAudioCommand => _kStopSharingAudioCommand;
   String get kChangeVideoSourceCommand => _kChangeVideoSourceCommand;
@@ -156,6 +161,7 @@ class ScreenMeetParametersManager {
   String get kRemoteControlEventKeyboardKey => _kRemoteControlEventKeyboardKey;
 
   String get kFeatureType => _kFeatureType;
+  String get kFeatureCancel => _kFeatureCancel;
   String get kFeatureRequestorId => _kFeatureRequestorId;
   String get kFeatureRequestorName => _kFeatureRequestorName;
 
@@ -209,9 +215,31 @@ class ScreenMeetParametersManager {
     return RemoteControlMouseEvent("fromId", "toId", 0, eventDict[_kRemoteControlEventTypeMouseX], eventDict[_kRemoteControlEventTypeMouseY], eventDict[_kRemoteControlEventMouseActionType]);
   }
 
+  bool isFeatureCancel(Map featureDict) {
+    return featureDict.keys.contains(kFeatureCancel);
+  }
+
+  FeatureCancelation featureCancelation(Map featureDict) {
+    return FeatureCancelation(featureDict[_kFeatureType]);
+  }
+
   FeatureRequest featureRequest(Map featureDict) {
-    FeatureRequest featureRequest =  FeatureRequest(featureDict[_kFeatureRequestorId], featureDict[_kFeatureRequestorName], featureDict[_kFeatureType]);
-    return featureRequest;
+    return FeatureRequest(
+        featureDict[_kFeatureRequestorId],
+        featureDict[_kFeatureRequestorName],
+        featureDict[_kFeatureType]
+    );
+  }
+
+  Map rectToMap(Rect rect) {
+    Map<String, double> rectMap = {
+      _kX: rect.left,
+      _kY: rect.top,
+      _kWidth:  rect.width,
+      _kHeight:  rect.height
+    };
+
+    return rectMap;
   }
 }
 

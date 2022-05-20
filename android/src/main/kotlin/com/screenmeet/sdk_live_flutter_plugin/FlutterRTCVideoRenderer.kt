@@ -2,7 +2,6 @@ package com.screenmeet.sdk_live_flutter_plugin
 
 import android.graphics.SurfaceTexture
 import android.util.Log
-import com.screenmeet.sdk.ScreenMeet
 import com.screenmeet.sdk_live_flutter_plugin.utils.AnyThreadSink
 import com.screenmeet.sdk_live_flutter_plugin.utils.ConstraintsMap
 import io.flutter.plugin.common.EventChannel
@@ -16,14 +15,15 @@ import org.webrtc.VideoTrack
 
 class FlutterRTCVideoRenderer(
         private val texture: SurfaceTexture,
-        private val entry: SurfaceTextureEntry
+        private val entry: SurfaceTextureEntry,
+        private val sharedContext: EglBase.Context?
     ) : EventChannel.StreamHandler {
 
     private val id = -1
     private var surfaceTextureRenderer = SurfaceTextureRenderer("")
 
     private var eventChannel: EventChannel? = null
-    private var eventSink: EventSink?
+    private var eventSink: EventSink? = null
 
     private var rendererEvents: RendererEvents? = null
     private var videoTrack: VideoTrack? = null
@@ -116,13 +116,6 @@ class FlutterRTCVideoRenderer(
      */
     private fun tryAddRendererToVideoTrack() {
         videoTrack?.apply {
-            val sharedContext: EglBase.Context? = ScreenMeet.eglContext
-            if (sharedContext == null) {
-                // If SurfaceViewRenderer#init() is invoked, it will throw a
-                // RuntimeException which will very likely kill the application.
-                Log.e(TAG, "Failed to render a VideoTrack!")
-                return
-            }
             surfaceTextureRenderer.release()
             listenRendererEvents()
             surfaceTextureRenderer.init(sharedContext, rendererEvents)
@@ -150,10 +143,4 @@ class FlutterRTCVideoRenderer(
         private const val TAG = "FlutterRTCVideoRenderer"
     }
 
-    init {
-        listenRendererEvents()
-        surfaceTextureRenderer.init(ScreenMeet.eglContext, rendererEvents)
-        surfaceTextureRenderer.surfaceCreated(texture)
-        eventSink = null
-    }
 }

@@ -8,14 +8,14 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:screenmeet_flutter_plugin_example/local_video_widget.dart';
 import 'package:screenmeet_sdk_flutter/confidential_widget.dart';
+import 'package:screenmeet_sdk_flutter/feature_request.dart';
+import 'package:screenmeet_sdk_flutter/remote_control_events.dart';
+import 'package:screenmeet_sdk_flutter/screenmeet_config.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_parameters_manager.dart';
 import 'package:screenmeet_sdk_flutter/screenmeet_plugin.dart';
-import 'package:screenmeet_sdk_flutter/remote_control_events.dart';
 
 import 'call_controls_widget.dart';
 import 'remote_participants_widget.dart';
-import 'package:screenmeet_sdk_flutter/screenmeet_config.dart';
-import 'package:screenmeet_sdk_flutter/feature_request.dart';
 
 void main() {
   runApp(MyApp());
@@ -36,7 +36,7 @@ class _MyAppState extends State<MyApp> {
     ]);
 
     //TODO Replace null with API Key
-    ScreenMeetConfig config = ScreenMeetConfig(organizationKey: "");
+    ScreenMeetConfig config = ScreenMeetConfig(organizationKey: null);
     ScreenMeetPlugin().setConfig(config);
   }
 
@@ -96,35 +96,55 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
         );
       }
       if (connectionState == ScreenMeetConnectionState.disconnected)  {
-        Navigator.maybePop(context);
+        Navigator.pop(context);
         setState(() { _isConnecting = false;});
       }
     });
 
+    bool alertShown = false;
     //Subscribe for feature permission request from remote peers
-    ScreenMeetPlugin().setFeatureRequestListener(listener: (FeatureRequest featureRequest) {
-      Widget rejectButton = TextButton(
-        child: Text("Reject"),
-        style: TextButton.styleFrom(primary: Color.fromARGB(255, 100, 100, 100)),
-        onPressed: () {
-          Navigator.of(context, rootNavigator: true).pop();
-          ScreenMeetPlugin().rejectAccess(featureRequest);
+    ScreenMeetPlugin().setFeatureRequestListener(
+      listener: (
+        FeatureRequest? featureRequest,
+        FeatureCancelation? featureCancelation
+      ) {
+        if(featureRequest != null){
+          Widget rejectButton = TextButton(
+              child: Text("Reject"),
+              style: TextButton.styleFrom(primary: Color.fromARGB(255, 100, 100, 100)),
+              onPressed: () {
+                alertShown = false;
+                Navigator.of(context, rootNavigator: true).pop();
+                ScreenMeetPlugin().rejectAccess(featureRequest);
+              }
+          );
+          Widget approveButton = TextButton(
+              child: Text("Grant"),
+              onPressed: () {
+                alertShown = false;
+                Navigator.of(context, rootNavigator: true).pop();
+                ScreenMeetPlugin().grantAccess(featureRequest);
+              }
+          );
+          AlertDialog alert = AlertDialog(
+              content: Text("Would you like to grant access to ${featureRequest.type} "
+                  "requested by ${featureRequest.requestorName}?"),
+              actions: [rejectButton, approveButton]
+          );
+          showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (BuildContext context) {
+                alertShown = true;
+                return alert;
+              }
+          );
         }
-      );
-      Widget approveButton = TextButton(
-        child: Text("Grant"),
-        onPressed: () {
-          Navigator.of(context, rootNavigator: true).pop();
-          ScreenMeetPlugin().grantAccess(featureRequest);
+        if(featureCancelation != null){
+          if(alertShown) Navigator.of(context, rootNavigator: true).pop();
         }
-      );
-      AlertDialog alert = AlertDialog(
-          content: Text("Would you like to grant access to ${featureRequest.type} "
-              "requested by ${featureRequest.requestorName}?"),
-          actions: [rejectButton, approveButton]
-      );
-      showDialog(context: context, builder: (BuildContext context) { return alert; });
-    });
+      }
+    );
   }
 
   void displayCaptcha(Uint8List challenge){
@@ -135,9 +155,7 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
       builder: (BuildContext context) {
         return StatefulBuilder(builder: (context, setState) {
           return Dialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20.0)
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
               child: Container(
                   child: Padding(
                       padding: const EdgeInsets.all(24.0),
@@ -146,9 +164,12 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Image.memory(challenge, width: 250,
+                            Image.memory(
+                                challenge,
+                                width: 250,
                                 height: 100,
-                                fit: BoxFit.fill),
+                                fit: BoxFit.fill
+                            ),
                             TextField(
                               style: TextStyle(
                                   fontSize: 18, fontWeight: FontWeight.bold),
@@ -226,7 +247,6 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
         }
       };
     }, (success) => {
-      Navigator.of(context).maybePop(),
       setState(() { _isConnecting = false;})
     });
   }
@@ -312,16 +332,22 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
 /// This screen contains call control buttons (audio, video, screen sharing),
 /// remote participants video views and local video view
 class _ScreenMeetDemoPage extends StatefulWidget {
+
   @override
   State<StatefulWidget> createState() {
     return _ScreenMeetDemoPageState();
   }
 }
 
-class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
+class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> with SingleTickerProviderStateMixin {
 
-  bool  isDown = false;
-  Offset touchPosition = Offset.zero;
+  GlobalKey _previewContainer = new GlobalKey();
+  bool _isDown = false;
+  Offset _touchPosition = Offset.zero;
+  Widget? _listContainer;
+
+  AnimationController? controller;
+  Animation<double>? offsetAnimation;
 
   double cut(double val) {
     if (val < 0) {
@@ -332,11 +358,11 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
 
   void tap(Offset pos, String type){
     final result = HitTestResult();
-    WidgetsBinding.instance!.hitTest(result, pos);
+    WidgetsBinding.instance.hitTest(result, pos);
     result.path.forEach((element) {
       if (type == RemoteControlMouseActionType.leftdown) {
-        isDown = true;
-        touchPosition = pos;
+        _isDown = true;
+        _touchPosition = pos;
         element.target.handleEvent(
           PointerDownEvent(
             position: pos,
@@ -346,7 +372,7 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
         );
       }
       else if (type == RemoteControlMouseActionType.leftup) {
-        isDown = false;
+        _isDown = false;
           element.target.handleEvent(
             PointerUpEvent(
               position: pos,
@@ -356,13 +382,13 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
           );
       }
       else if (type == RemoteControlMouseActionType.move) {
-        if (isDown) {
+        if (_isDown) {
           element.target.handleEvent(
             PointerMoveEvent(
               position: pos,
               delta: Offset(
-                cut(pos.dx - touchPosition.dx),
-                cut(pos.dy - touchPosition.dy)
+                cut(pos.dx - _touchPosition.dx),
+                cut(pos.dy - _touchPosition.dy)
               )
             ),
             element,
@@ -375,6 +401,9 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
   @override
   void initState() {
     super.initState();
+
+    controller = AnimationController(duration: const Duration(milliseconds: 500), vsync: this);
+
     //Subscribe for remote control events
     ScreenMeetPlugin().setRemoteControlListener(
       listener: (RemoteControlEvent event) {
@@ -383,73 +412,106 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
         }
       }
     );
+
+    ScreenMeetPlugin().screenSharingKey = _previewContainer;
   }
 
   @override
   Widget build(BuildContext context) {
+     offsetAnimation = Tween(begin: 0.0, end: 28.0).chain(CurveTween(curve: Curves.elasticIn)).animate(controller!)
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          controller?.reverse();
+        }
+      });
+
     return Scaffold(
-      body: Stack(
-        children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Spacer(),
-              new Expanded(
-                flex: 70,
-                child: RemoteParticipantsWidget()
-              ),
-              Spacer(),
-              new Expanded(
-                flex: 10,
-                child: CallControlsWidget()
-              ),
-              Spacer(),
-              new Expanded(
-                flex: 3,
-                child: ConfidentialWidget(
-                  Key("text"),
-                  Text(
-                    '[confidential widget]',
-                    style: TextStyle(fontSize: 12.0)
+        backgroundColor: Colors.white,
+        body:
+        RepaintBoundary(key: _previewContainer,
+            child:
+            Container(child:
+            Stack(
+                children: [
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Spacer(),
+                      new Expanded(
+                          flex: 70,
+                          child: RemoteParticipantsWidget()
+                      ),
+                      Spacer(),
+                      new Expanded(
+                          flex: 10,
+                          child: CallControlsWidget()
+                      ),
+                      Spacer(),
+                      Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 0), child:
+                      new Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            SizedBox(width: 50),
+                            ConfidentialWidget(
+                              Key("text"),
+                              Text(
+                                  '[confidential widget]',
+                                  style: TextStyle(fontSize: 12.0)
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.amp_stories_sharp),
+                              iconSize:  24,
+                              onPressed: () {
+                                controller?.forward(from: 0.0);
+                              },
+                            )
+                          ]
+                      )
+                      ),
+
+                      Spacer(),
+                      new Expanded(
+                          flex: 15,
+                          child: Padding(
+                              padding: const EdgeInsets.fromLTRB(0.0, 0, 0.0, 60.0),
+                              child: listView()
+                          )
+                      )
+                    ],
                   ),
-                ),
-              ),
-              Spacer(),
-              new Expanded(
-                flex: 15,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0.0, 0, 0.0, 60.0),
-                  child: listView()
-                )
-              )
-            ],
-          ),
-          Positioned(top: 40, left: 10, child: LocalVideoWidget()),
-          Positioned(
-            child: new Align(
-              alignment: FractionalOffset.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0.0, 0, 0.0, 24.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "Powered by Screenmeet ©",
-                      style: TextStyle(fontSize: 12.0)
-                    ),
-                    SizedBox(width: 4),
-                    Image(
-                      width: 22, height: 22,
-                      image: AssetImage('assets/screenmeet.png')
-                    )
-                  ]
-                )
-              )
-            )
-          ),
-        ]
-      ),
+                  Positioned(top: 40, left: 10, child: LocalVideoWidget()),
+                  Positioned(
+                      child: new Align(
+                          alignment: FractionalOffset.bottomCenter,
+                          child: Padding(
+                              padding: const EdgeInsets.fromLTRB(0.0, 0, 0.0, 24.0),
+                              child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                        "Powered by Screenmeet ©",
+                                        style: TextStyle(fontSize: 12.0)
+                                    ),
+                                    SizedBox(width: 4),
+                                    Image(
+                                        width: 22, height: 22,
+                                        image: AssetImage('assets/screenmeet.png')
+                                    )
+                                  ]
+                              )
+                          )
+                      )
+                  ),
+                ]
+            ),
+              color: Colors.white)
+        )
     );
+  }
+
+  void animate() {
+
   }
 
   Widget listView(){
@@ -468,12 +530,22 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> {
         )
     );
 
-    return Container(
+    _listContainer = Container(
         margin: EdgeInsets.fromLTRB(0, 0, 0, 0),
-        child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: list
-        )
+        child: AnimatedBuilder(
+            animation: offsetAnimation!,
+            builder: (buildContext, child) {
+              return Container(
+                padding: EdgeInsets.only(left: offsetAnimation!.value + 28.0, right: 28.0 - offsetAnimation!.value),
+                child:  ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: list
+                ),
+              );
+            })
+
     );
+
+    return _listContainer!;
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rect_getter/rect_getter.dart';
+
 import 'screenmeet_plugin.dart';
 
 ///An example of how to use confidentiality feature
@@ -15,21 +16,17 @@ class ConfidentialWidget extends StatefulWidget {
 
   @override
   State<StatefulWidget> createState() => ConfidentialWidgetState();
-
 }
 
 class ConfidentialWidgetState extends State<ConfidentialWidget> with WidgetsBindingObserver {
 
-  final int millisecondsFrequencyToEmitBounds = 40;
-  Duration _lastTimeStamp = Duration();
+  late RectGetter rect;
 
   @override
   Widget build(BuildContext context) {
-    var rect = new RectGetter.defaultKey(
+    rect = new RectGetter.defaultKey(
         child: widget.child
     );
-
-    //Pass the confidential area rect to the ScreenMeet SDK so it hides it when sharing screen
     ScreenMeetPlugin().attachConfidentialWidget(widget.key.toString(), rect);
     return rect;
   }
@@ -37,13 +34,17 @@ class ConfidentialWidgetState extends State<ConfidentialWidget> with WidgetsBind
   @override
   void initState() {
     super.initState();
+  }
 
-    WidgetsBinding.instance?.addPostFrameCallback((_) {
-      WidgetsBinding.instance?.addPersistentFrameCallback((timeStamp) async {
-        if (timeStamp.inMilliseconds - _lastTimeStamp.inMilliseconds > millisecondsFrequencyToEmitBounds) {
-          ScreenMeetPlugin().emitBounds();
-        }
-      });
-    });
+  @override
+  void activate() {
+    super.activate();
+    ScreenMeetPlugin().attachConfidentialWidget(widget.key.toString(), rect);
+  }
+
+  @override
+  void deactivate() {
+    super.deactivate();
+    ScreenMeetPlugin().unsetConfidential(widget.key.toString());
   }
 }

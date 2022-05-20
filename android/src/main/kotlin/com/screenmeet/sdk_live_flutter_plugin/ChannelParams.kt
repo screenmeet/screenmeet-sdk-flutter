@@ -60,11 +60,16 @@ fun mapEntitlement(entitlement: Entitlement) = when(entitlement){
 
 fun zipChallenge(challenge: Challenge): Map<String, Any> {
     val stream = ByteArrayOutputStream()
-    challenge.challenge.compress(Bitmap.CompressFormat.PNG, 100, stream)
+    challenge.bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
     val byteArray: ByteArray = stream.toByteArray()
-    challenge.challenge.recycle()
+    challenge.bitmap.recycle()
     return mapOf(ChannelParams.challenge to byteArray)
 }
+
+fun zipFeatureCancel(entitlement: Entitlement) = mapOf(
+    ChannelParams.featureCancel to true,
+    ChannelParams.featureType to mapEntitlement(entitlement),
+)
 
 fun zipFeature(feature: Feature) = mapOf(
     ChannelParams.featureType to mapEntitlement(feature.entitlement),
@@ -86,6 +91,7 @@ class ChannelParams {
         const val connectRoomId = "connectRoomId"
 
         const val shareScreenCommand = "shareScreen"
+        const val shareScreenWithImageTransfer = "shareScreenWithImageTransfer"
         const val shareVideoCommand = "shareVideo"
         const val stopSharingVideoCommand = "stopSharingVideo"
         const val shareAudioCommand = "shareAudio"
@@ -117,6 +123,7 @@ class ChannelParams {
         const val logLevel = "logLevel"
 
         const val featureType = "featureType"
+        const val featureCancel= "featureCancel"
         const val featureRequestorId = "featureRequestorId"
         const val featureRequestorName = "featureRequestorName"
 

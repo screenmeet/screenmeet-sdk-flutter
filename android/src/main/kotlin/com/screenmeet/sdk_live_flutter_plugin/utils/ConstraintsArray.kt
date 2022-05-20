@@ -1,6 +1,6 @@
 package com.screenmeet.sdk_live_flutter_plugin.utils
 
-import java.util.ArrayList
+import kotlin.collections.ArrayList
 
 class ConstraintsArray {
 
