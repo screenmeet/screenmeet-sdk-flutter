@@ -212,7 +212,6 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
             let frontCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: AVMediaType.video, position: .front)
             let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: AVMediaType.video, position: .back)
 
-            
             if ScreenMeet.getVideoSourceDevice().uniqueID == frontCamera?.uniqueID {
                 ScreenMeet.shareCamera(backCamera)
             }
@@ -374,13 +373,15 @@ public class SwiftSdkLiveFlutterPlugin: NSObject, FlutterPlugin {
     private func handleTexturesForRemoteParticipants(_ participants: [SMParticipant]) {
         for participant in participants {
             if participant.avState.isVideoActive, let track = participant.videoTrack {
-                if let _ = renderers[participant.id] {
-                    
+               
+                if let renderer = renderers[participant.id] {
+                    renderer.videoTrack = track
                 }
                 else {
-                    let renderer = FlutterRTCVideoRenderer(textureRegistry: registry.textures(), messenger: registry.messenger())!
+                    let renderer = FlutterRTCVideoRenderer(textureRegistry: self.registry.textures(), messenger: self.registry.messenger())!
                     self.renderers[participant.id] = renderer
                     renderer.videoTrack = track
+                    self.participantsStreamHandler.sendParticipants(participants, renderers)
                 }
             }
             else if !participant.avState.isVideoActive, let renderer = renderers[participant.id] {
@@ -483,7 +484,7 @@ extension SwiftSdkLiveFlutterPlugin: ScreenMeetDelegate {
     
     public func onLocalVideoSourceChanged() {
         sendMediaState()
-        //sendLocalVideo()
+        sendLocalVideo()
     }
     
     public func onLocalVideoStopped() {

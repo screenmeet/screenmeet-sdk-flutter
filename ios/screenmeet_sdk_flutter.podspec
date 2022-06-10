@@ -5,7 +5,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'screenmeet_sdk_flutter'
-  s.version          = '2.0.9'
+  s.version          = '2.0.10'
   s.summary          = 'A Flutter plugin for a ScreenMeet SDK'
   s.description      = <<-DESC
 A Flutter plugin for a ScreenMeet SDK
@@ -16,7 +16,7 @@ A Flutter plugin for a ScreenMeet SDK
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.dependency 'ScreenMeetSDK', '2.0.11'
+  s.dependency 'ScreenMeetSDK', '2.0.12'
   s.dependency 'Libyuv', '1703'
   s.platform = :ios, '12.0'
   s.static_framework = true
