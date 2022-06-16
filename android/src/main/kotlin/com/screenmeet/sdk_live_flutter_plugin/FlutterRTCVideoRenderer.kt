@@ -14,10 +14,14 @@ import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
 class FlutterRTCVideoRenderer(
-        private val texture: SurfaceTexture,
         private val entry: SurfaceTextureEntry,
         private val sharedContext: EglBase.Context?
     ) : EventChannel.StreamHandler {
+
+    private val texture: SurfaceTexture = entry.surfaceTexture()
+
+    val textureId: Long
+        get() = entry.id()
 
     private val id = -1
     private var surfaceTextureRenderer = SurfaceTextureRenderer("")
@@ -28,9 +32,75 @@ class FlutterRTCVideoRenderer(
     private var rendererEvents: RendererEvents? = null
     private var videoTrack: VideoTrack? = null
 
-    private fun listenRendererEvents() {
-        rendererEvents = object : RendererEvents {
+    override fun onListen(o: Any, sink: EventSink) {
+        eventSink = AnyThreadSink(sink)
+    }
 
+    override fun onCancel(o: Any) {
+        eventSink = null
+    }
+
+    /**
+     * Sets the `VideoTrack` to be rendered by this `FlutterRTCVideoRenderer`.
+     *
+     * @param videoTrackNew The `VideoTrack` to be rendered by this
+     * `FlutterRTCVideoRenderer` or `null`.
+     */
+    fun setVideoTrack(videoTrackNew: VideoTrack?) {
+        val oldValue = videoTrack
+        if (oldValue !== videoTrackNew) {
+            if (oldValue != null) {
+                removeRendererFromVideoTrack()
+            }
+            videoTrack = videoTrackNew
+            if (videoTrackNew != null) {
+                Log.w(TAG,
+                    "FlutterRTCVideoRenderer.setVideoTrack, " +
+                            "set video track to " + videoTrackNew.id()
+                )
+                tryAddRendererToVideoTrack()
+            } else Log.w(TAG, "FlutterRTCVideoRenderer.setVideoTrack, set video track to null")
+        }
+    }
+
+    /**
+     * Starts rendering [.videoTrack] if rendering is not in progress and
+     * all preconditions for the start of rendering are met.
+     */
+    private fun tryAddRendererToVideoTrack() {
+        videoTrack?.apply {
+            surfaceTextureRenderer.release()
+            rendererEvents = provideRendererEventsListener()
+            surfaceTextureRenderer.init(sharedContext, rendererEvents)
+            surfaceTextureRenderer.surfaceCreated(texture)
+            addSink(rotationSink)
+        }
+    }
+
+    fun dispose() {
+        removeRendererFromVideoTrack()
+        eventChannel?.setStreamHandler(null)
+        eventSink = null
+        surfaceTextureRenderer.release()
+        surfaceTextureRenderer.surfaceDestroyed()
+        entry.release()
+    }
+
+    /**
+     * Stops rendering [VideoTrack] and releases the associated acquired
+     * resources (if rendering is in progress).
+     */
+    private fun removeRendererFromVideoTrack() {
+        videoTrack?.removeSink(rotationSink)
+    }
+
+    private val rotationSink = VideoSink { videoFrame: VideoFrame ->
+        val frame = VideoFrame(videoFrame.buffer, 0, videoFrame.timestampNs)
+        surfaceTextureRenderer.onFrame(frame)
+    }
+
+    private fun provideRendererEventsListener(): RendererEvents {
+        return object : RendererEvents {
             private var rotation = -1
             private var width = 0
             private var height = 0
@@ -69,74 +139,6 @@ class FlutterRTCVideoRenderer(
                 }
             }
         }
-    }
-
-    override fun onListen(o: Any, sink: EventSink) {
-        eventSink = AnyThreadSink(sink)
-    }
-
-    override fun onCancel(o: Any) {
-        eventSink = null
-    }
-
-    /**
-     * Stops rendering [VideoTrack] and releases the associated acquired
-     * resources (if rendering is in progress).
-     */
-    private fun removeRendererFromVideoTrack() {
-        videoTrack?.removeSink(surfaceTextureRenderer)
-    }
-
-    /**
-     * Sets the `VideoTrack` to be rendered by this `FlutterRTCVideoRenderer`.
-     *
-     * @param videoTrackNew The `VideoTrack` to be rendered by this
-     * `FlutterRTCVideoRenderer` or `null`.
-     */
-    fun setVideoTrack(videoTrackNew: VideoTrack?) {
-        val oldValue = videoTrack
-        if (oldValue !== videoTrackNew) {
-            if (oldValue != null) {
-                removeRendererFromVideoTrack()
-            }
-            videoTrack = videoTrackNew
-            if (videoTrackNew != null) {
-                Log.w(TAG,
-                    "FlutterRTCVideoRenderer.setVideoTrack, " +
-                            "set video track to " + videoTrackNew.id()
-                )
-                tryAddRendererToVideoTrack()
-            } else Log.w(TAG, "FlutterRTCVideoRenderer.setVideoTrack, set video track to null")
-        }
-    }
-
-    /**
-     * Starts rendering [.videoTrack] if rendering is not in progress and
-     * all preconditions for the start of rendering are met.
-     */
-    private fun tryAddRendererToVideoTrack() {
-        videoTrack?.apply {
-            surfaceTextureRenderer.release()
-            listenRendererEvents()
-            surfaceTextureRenderer.init(sharedContext, rendererEvents)
-            surfaceTextureRenderer.surfaceCreated(texture)
-            addSink(rotationSink)
-        }
-    }
-
-    fun dispose() {
-        eventChannel?.setStreamHandler(null)
-        eventSink = null
-        surfaceTextureRenderer.release()
-        entry.release()
-    }
-
-    val textureId: Long
-        get() = entry.id()
-
-    private val rotationSink = VideoSink { videoFrame: VideoFrame ->
-        val frame = VideoFrame(videoFrame.buffer, 0, videoFrame.timestampNs)
-        surfaceTextureRenderer.onFrame(frame)
     }
 
     companion object {

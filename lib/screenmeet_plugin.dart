@@ -120,7 +120,7 @@ class ScreenMeetPlugin {
         .receiveBroadcastStream()
         .listen(_onFeatureRequestEvent, onError: _onFeatureRequestError);
 
-    WidgetsBinding.instance.addPersistentFrameCallback((timeStamp) async {
+    WidgetsBinding.instance?.addPersistentFrameCallback((timeStamp) async {
       if (_keepOnTakingScreenShots) {
         if ((timeStamp - _lastScreenDuration).inMilliseconds > _screenShotImeInterval) {
           takeScreenShot();
@@ -408,7 +408,6 @@ class ScreenMeetPlugin {
 
       var previewContainerKey = ScreenMeetPlugin().screenSharingKey;
       var boundary = previewContainerKey!.currentContext!.findRenderObject() as RenderRepaintBoundary;
-
       var image = await boundary.toImage(pixelRatio: 1.0);
       var byteData = await image.toByteData(format: ImageByteFormat.png);
 

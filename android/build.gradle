@@ -9,13 +9,13 @@ buildscript {
 
     dependencies {
         classpath 'com.android.tools.build:gradle:4.1.3'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.6.10"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.6.21"
     }
 }
 
 rootProject.allprojects {
     repositories {
-        def mavenUrl = System.getenv("SM_MAVEN_URL")
+        def mavenUrl= System.getenv("SM_MAVEN_URL")
         if(mavenUrl != null && !mavenUrl.isBlank()){ maven { url = mavenUrl} }
         maven { url "https://nexus.screenmeet.com/repository/maven-releases/" }
         google()
@@ -39,5 +39,5 @@ android {
 }
 
 dependencies {
-    implementation ('com.screenmeet:sdk:2.0.11')
+    implementation ('com.screenmeet:sdk:2.0.12')
 }

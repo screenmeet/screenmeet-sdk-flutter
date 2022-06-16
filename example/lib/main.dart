@@ -35,8 +35,8 @@ class _MyAppState extends State<MyApp> {
       DeviceOrientation.portraitUp
     ]);
 
-    //TODO Replace null with API Key
-    ScreenMeetConfig config = ScreenMeetConfig(organizationKey: null);
+    //TODO Insert your API Key
+    ScreenMeetConfig config = ScreenMeetConfig(organizationKey: "");
     ScreenMeetPlugin().setConfig(config);
   }
 
@@ -72,6 +72,7 @@ class _ScreenMeetConnectPage extends StatefulWidget {
 class _ConnectState extends State<_ScreenMeetConnectPage> {
 
   bool _isConnecting = false;
+  bool _callScreenIsPushed = false;
 
   /// room textfield controller
   final TextEditingController roomEditingController = TextEditingController(text: "");
@@ -86,17 +87,22 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
     ScreenMeetPlugin().setConnectionStateListener(listener: (String connectionState) {
       //Go to main screen if connected (entered the room successfully)
       if (connectionState == ScreenMeetConnectionState.connected)  {
-        Navigator.push(
-          context,
-          PageRouteBuilder(pageBuilder: (c, a1, a2) =>
-            _ScreenMeetDemoPage(),
-            transitionsBuilder: (c, anim, a2, child) => FadeTransition(opacity: anim, child: child),
-            transitionDuration: Duration(milliseconds: 800)
-          )
-        );
+        if (!_callScreenIsPushed) {
+          Navigator.push(
+              context,
+              PageRouteBuilder(pageBuilder: (c, a1, a2) =>
+                  _ScreenMeetDemoPage(),
+                  transitionsBuilder: (c, anim, a2, child) =>
+                      FadeTransition(opacity: anim, child: child),
+                  transitionDuration: Duration(milliseconds: 800)
+              )
+          );
+          _callScreenIsPushed = true;
+        }
       }
       if (connectionState == ScreenMeetConnectionState.disconnected)  {
         Navigator.pop(context);
+        _callScreenIsPushed = false;
         setState(() { _isConnecting = false;});
       }
     });
@@ -275,6 +281,9 @@ class _ConnectState extends State<_ScreenMeetConnectPage> {
                   keyboardType: TextInputType.number,
                   maxLength: 6,
                   style: TextStyle(fontSize: 20),
+                    inputFormatters: <TextInputFormatter>[
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
+                    ],
                   autofocus: true,
                   decoration: InputDecoration(counterText: ""),
                   controller: roomEditingController
@@ -508,10 +517,6 @@ class _ScreenMeetDemoPageState extends State<_ScreenMeetDemoPage> with SingleTic
               color: Colors.white)
         )
     );
-  }
-
-  void animate() {
-
   }
 
   Widget listView(){

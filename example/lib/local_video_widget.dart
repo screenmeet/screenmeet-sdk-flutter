@@ -67,6 +67,14 @@ class LocalVideoState extends State<LocalVideoWidget> {
             (participants) =>setState(() { this.numberOfParticipants = participants.length;})
     );
 
+    /// Check if it's a local track srteaming camera video or screen
+    /// In case of screen, we don't need to render ir  on screen
+    var mediaStateResponse = await ScreenMeetPlugin().getLocalMediaState();
+    mediaStateResponse.fold(
+            (error) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.text))),
+            (mediaState) =>setState(() { localVideo.isOn == mediaState.isSharingVideo;})
+    );
+
     updateLocalVideoState(localVideo);
   }
 

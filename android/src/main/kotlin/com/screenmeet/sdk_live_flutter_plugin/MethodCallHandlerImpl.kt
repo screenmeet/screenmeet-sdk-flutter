@@ -186,22 +186,20 @@ class MethodCallHandlerImpl internal constructor(
         val collectMetrics: Boolean = call.argument(collectMetrics) ?: true
         val logLevel: String? = call.argument(logLevel)
 
-        if(organizationKey != null && organizationKey.isNotBlank()){
-            val configuration = ScreenMeet.Configuration(organizationKey)
-            configuration.collectMetrics(collectMetrics)
-            when(logLevel){
-                "info" -> ScreenMeet.Configuration.LogLevel.INFO
-                "debug" -> ScreenMeet.Configuration.LogLevel.DEBUG
-                "error" -> ScreenMeet.Configuration.LogLevel.ERROR
-                else -> null
-            }?.let { configuration.logLevel(it) }
+        val configuration = ScreenMeet.Configuration(organizationKey!!)
+        configuration.collectMetrics(collectMetrics)
+        when(logLevel){
+            "info" -> ScreenMeet.Configuration.LogLevel.INFO
+            "debug" -> ScreenMeet.Configuration.LogLevel.DEBUG
+            "error" -> ScreenMeet.Configuration.LogLevel.ERROR
+            else -> null
+        }?.let { configuration.logLevel(it) }
 
-            ScreenMeet.init(context, configuration)
-            ScreenMeet.setFlutterDelegate(flutterDelegate)
-            (context as Application).registerActivityLifecycleCallbacks(ScreenMeet.activityLifecycleCallback())
-            activity?.let { ScreenMeet.setContext(it) }
-            result.successful()
-        } else result.error("OrganizationKey can not be empty!", errorCodeWrongMethodParameters)
+        ScreenMeet.init(context, configuration)
+        ScreenMeet.setFlutterDelegate(flutterDelegate)
+        (context as Application).registerActivityLifecycleCallbacks(ScreenMeet.activityLifecycleCallback())
+        activity?.let { ScreenMeet.setContext(it) }
+        result.successful()
     }
 
     private fun connect(call: MethodCall, result: AnyThreadResult) {
@@ -284,8 +282,7 @@ class MethodCallHandlerImpl internal constructor(
     private fun handleTextureForLocalVideo(mediaState: ParticipantMediaState) {
         if (mediaState.isVideoActive && mediaState.videoState.cameraEnabled) {
             val entry = textureRegistry.createSurfaceTexture()
-            val surfaceTexture = entry.surfaceTexture()
-            localRenderer = FlutterRTCVideoRenderer(surfaceTexture, entry, ScreenMeet.eglContext)
+            localRenderer = FlutterRTCVideoRenderer(entry, ScreenMeet.eglContext)
             localRenderer?.setVideoTrack(localVideoTrack)
         } else {
             localRenderer?.setVideoTrack(null)
@@ -296,11 +293,16 @@ class MethodCallHandlerImpl internal constructor(
 
     private fun handleTexturesForRemoteParticipants(participants: List<Participant>) {
         participants.forEach { participant ->
-            if (participant.mediaState.isVideoActive && participant.videoTrack != null) {
-                val entry = textureRegistry.createSurfaceTexture()
-                val surfaceTexture = entry.surfaceTexture()
-                val renderer = FlutterRTCVideoRenderer(surfaceTexture, entry, null)
-                renderers[participant.id] = renderer
+            if (
+                participant.mediaState.isVideoActive
+                && participant.videoTrack != null
+            ) {
+                var renderer = renderers[participant.id]
+                if(renderer == null) {
+                    val entry = textureRegistry.createSurfaceTexture()
+                    renderer = FlutterRTCVideoRenderer(entry, null)
+                    renderers[participant.id] = renderer
+                }
                 renderer.setVideoTrack(participant.videoTrack)
             } else if (!participant.mediaState.isVideoActive) {
                 renderers[participant.id]?.let { renderer ->
@@ -352,7 +354,6 @@ class MethodCallHandlerImpl internal constructor(
 
     private fun clearTextures()  {
         for ((_, renderer) in renderers) {
-            renderer.setVideoTrack(null)
             renderer.dispose()
         }
         renderers.clear()
@@ -363,6 +364,8 @@ class MethodCallHandlerImpl internal constructor(
     override fun onConnectionStateChanged(newState: ScreenMeet.ConnectionState) {
         if (newState.state == ScreenMeet.SessionState.DISCONNECTED){
             ScreenMeet.unregisterEventListener(this)
+            onLocalVideoStopped()
+            clearTextures()
         }
         connectionStreamHandler.sendConnectionState(newState)
     }
@@ -390,11 +393,17 @@ class MethodCallHandlerImpl internal constructor(
         sendLocalVideo()
     }
 
-    override fun onParticipantJoined(participant: Participant) { sendParticipants() }
+    override fun onParticipantJoined(participant: Participant) {
+        sendParticipants()
+    }
 
-    override fun onParticipantLeft(participant: Participant) { sendParticipants() }
+    override fun onParticipantLeft(participant: Participant) {
+        sendParticipants()
+    }
 
-    override fun onParticipantMediaStateChanged(participant: Participant) { sendParticipants() }
+    override fun onParticipantMediaStateChanged(participant: Participant) {
+        sendParticipants()
+    }
 
     override fun onChatMessage(chatMessage: ChatMessage) { }
 
